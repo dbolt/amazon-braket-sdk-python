@@ -45,6 +45,7 @@ class AwsQuantumTaskBatch:
         task_specifications: List[Union[Circuit, Problem, OpenQasmProgram]],
         s3_destination_folder: AwsSession.S3DestinationFolder,
         shots: int,
+        get_result: bool,
         max_parallel: int,
         max_workers: int = MAX_CONNECTIONS_DEFAULT,
         poll_timeout_seconds: float = AwsQuantumTask.DEFAULT_RESULTS_POLL_TIMEOUT,
@@ -85,6 +86,7 @@ class AwsQuantumTaskBatch:
             task_specifications,
             s3_destination_folder,
             shots,
+            get_result,
             max_parallel,
             max_workers,
             poll_timeout_seconds,
@@ -101,6 +103,7 @@ class AwsQuantumTaskBatch:
         self._task_specifications = task_specifications
         self._s3_destination_folder = s3_destination_folder
         self._shots = shots
+        self._get_result = get_result
         self._max_parallel = max_parallel
         self._max_workers = max_workers
         self._poll_timeout_seconds = poll_timeout_seconds
@@ -115,6 +118,7 @@ class AwsQuantumTaskBatch:
         task_specifications,
         s3_destination_folder,
         shots,
+        get_result,
         max_parallel,
         max_workers,
         poll_timeout_seconds,
@@ -140,6 +144,7 @@ class AwsQuantumTaskBatch:
                     task,
                     s3_destination_folder,
                     shots,
+                    get_result,
                     poll_timeout_seconds=poll_timeout_seconds,
                     poll_interval_seconds=poll_interval_seconds,
                     *args,
@@ -158,6 +163,7 @@ class AwsQuantumTaskBatch:
         task_specification,
         s3_destination_folder,
         shots,
+        get_result,
         poll_interval_seconds,
         *args,
         **kwargs,
@@ -168,6 +174,7 @@ class AwsQuantumTaskBatch:
             task_specification,
             s3_destination_folder,
             shots,
+            get_result,
             poll_interval_seconds=poll_interval_seconds,
             *args,
             **kwargs,
@@ -248,6 +255,7 @@ class AwsQuantumTaskBatch:
             [self._task_specifications[i] for i in unsuccessful_indices],
             self._s3_destination_folder,
             self._shots,
+            self._get_result,
             self._max_parallel,
             self._max_workers,
             self._poll_timeout_seconds,
