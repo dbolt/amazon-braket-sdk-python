@@ -1,4 +1,4 @@
-# Copyright 2019-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"). You
 # may not use this file except in compliance with the License. A copy of
@@ -31,15 +31,19 @@ setup(
         "backoff",
         "boltons",
         "boto3",
+        "coverage==5.5",
         "nest-asyncio",
         "networkx",
         "numpy",
+        "sympy",
     ],
     extras_require={
         "test": [
             "black",
+            "botocore",
             "flake8",
             "isort",
+            "jsonschema==3.2.0",
             "pre-commit",
             "pylint",
             "pytest",
@@ -52,6 +56,7 @@ setup(
             "tox",
         ]
     },
+    include_package_data=True,
     url="https://github.com/aws/amazon-braket-sdk-python",
     author="Amazon Web Services",
     description=(

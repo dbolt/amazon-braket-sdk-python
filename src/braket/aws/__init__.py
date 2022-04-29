@@ -1,4 +1,4 @@
-# Copyright 2019-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"). You
 # may not use this file except in compliance with the License. A copy of
@@ -12,6 +12,7 @@
 # language governing permissions and limitations under the License.
 
 from braket.aws.aws_device import AwsDevice, AwsDeviceType  # noqa: F401
+from braket.aws.aws_quantum_job import AwsQuantumJob  # noqa: F401
 from braket.aws.aws_quantum_task import AwsQuantumTask  # noqa: F401
 from braket.aws.aws_quantum_task_batch import AwsQuantumTaskBatch  # noqa: F401
 from braket.aws.aws_session import AwsSession  # noqa: F401

@@ -1,4 +1,4 @@
-# Copyright 2019-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"). You
 # may not use this file except in compliance with the License. A copy of
@@ -13,21 +13,23 @@
 
 from __future__ import annotations
 
+import os
+from datetime import datetime
 from enum import Enum
 from typing import List, Optional, Union
 
-import boto3
-from botocore.config import Config
-from networkx import Graph, complete_graph, from_edgelist
+from botocore.errorfactory import ClientError
+from networkx import DiGraph, complete_graph, from_edgelist
 
 from braket.annealing.problem import Problem
 from braket.aws.aws_quantum_task import AwsQuantumTask
 from braket.aws.aws_quantum_task_batch import AwsQuantumTaskBatch
 from braket.aws.aws_session import AwsSession
 from braket.circuits import Circuit
-from braket.device_schema import DeviceCapabilities, GateModelQpuParadigmProperties
+from braket.device_schema import DeviceCapabilities, ExecutionDay, GateModelQpuParadigmProperties
 from braket.device_schema.dwave import DwaveProviderProperties
 from braket.devices.device import Device
+from braket.ir.openqasm import Program as OpenQasmProgram
 from braket.schema_common import BraketSchemaBase
 
 
@@ -45,7 +47,7 @@ class AwsDevice(Device):
     device.
     """
 
-    REGIONS = ("us-east-1", "us-west-1", "us-west-2")
+    REGIONS = ("us-east-1", "us-west-1", "us-west-2", "eu-west-2")
 
     DEFAULT_SHOTS_QPU = 1000
     DEFAULT_SHOTS_SIMULATOR = 0
@@ -65,8 +67,9 @@ class AwsDevice(Device):
             physically located. When this occurs, a cloned `aws_session` is created for the Region
             the QPU is located in.
 
-            See `braket.aws.aws_device.AwsDevice.DEVICE_REGIONS` for the AWS Regions provider
-            devices are located in.
+            See `braket.aws.aws_device.AwsDevice.REGIONS` for the AWS regions provider
+            devices are located in across the AWS Braket service.
+            This is not a device specific tuple.
         """
         super().__init__(name=None, status=None)
         self._arn = arn
@@ -78,8 +81,8 @@ class AwsDevice(Device):
 
     def run(
         self,
-        task_specification: Union[Circuit, Problem],
-        s3_destination_folder: AwsSession.S3DestinationFolder,
+        task_specification: Union[Circuit, Problem, OpenQasmProgram],
+        s3_destination_folder: Optional[AwsSession.S3DestinationFolder] = None,
         shots: Optional[int] = None,
         poll_timeout_seconds: float = AwsQuantumTask.DEFAULT_RESULTS_POLL_TIMEOUT,
         poll_interval_seconds: float = AwsQuantumTask.DEFAULT_RESULTS_POLL_INTERVAL,
@@ -93,7 +96,10 @@ class AwsDevice(Device):
         Args:
             task_specification (Union[Circuit, Problem]): Specification of task
                 (circuit or annealing problem) to run on device.
-            s3_destination_folder: The S3 location to save the task's results to.
+            s3_destination_folder (AwsSession.S3DestinationFolder, optional): The S3 location to
+                save the task's results to. Default is `<default_bucket>/tasks` if evoked
+                outside of a Braket Job, `<Job Bucket>/jobs/<job name>/tasks` if evoked inside of
+                a Braket Job.
             shots (int, optional): The number of times to run the circuit or annealing problem.
                 Default is 1000 for QPUs and 0 for simulators.
             poll_timeout_seconds (float): The polling timeout for `AwsQuantumTask.result()`,
@@ -141,7 +147,13 @@ class AwsDevice(Device):
             self._aws_session,
             self._arn,
             task_specification,
-            s3_destination_folder,
+            s3_destination_folder
+            or (
+                AwsSession.parse_s3_uri(os.environ.get("AMZN_BRAKET_TASK_RESULTS_S3_URI"))
+                if "AMZN_BRAKET_TASK_RESULTS_S3_URI" in os.environ
+                else None
+            )
+            or (self._aws_session.default_bucket(), "tasks"),
             shots if shots is not None else self._default_shots,
             poll_timeout_seconds=poll_timeout_seconds,
             poll_interval_seconds=poll_interval_seconds,
@@ -151,8 +163,8 @@ class AwsDevice(Device):
 
     def run_batch(
         self,
-        task_specifications: List[Union[Circuit, Problem]],
-        s3_destination_folder: AwsSession.S3DestinationFolder,
+        task_specifications: List[Union[Circuit, Problem, OpenQasmProgram]],
+        s3_destination_folder: Optional[AwsSession.S3DestinationFolder] = None,
         shots: Optional[int] = None,
         max_parallel: Optional[int] = None,
         max_connections: int = AwsQuantumTaskBatch.MAX_CONNECTIONS_DEFAULT,
@@ -166,7 +178,10 @@ class AwsDevice(Device):
         Args:
             task_specifications (List[Union[Circuit, Problem]]): List of  circuits
                 or annealing problems to run on device.
-            s3_destination_folder: The S3 location to save the tasks' results to.
+            s3_destination_folder (AwsSession.S3DestinationFolder, optional): The S3 location to
+                save the tasks' results to. Default is `<default_bucket>/tasks` if evoked
+                outside of a Braket Job, `<Job Bucket>/jobs/<job name>/tasks` if evoked inside of
+                a Braket Job.
             shots (int, optional): The number of times to run the circuit or annealing problem.
                 Default is 1000 for QPUs and 0 for simulators.
             max_parallel (int, optional): The maximum number of tasks to run on AWS in parallel.
@@ -190,10 +205,16 @@ class AwsDevice(Device):
             `braket.aws.aws_quantum_task_batch.AwsQuantumTaskBatch`
         """
         return AwsQuantumTaskBatch(
-            AwsDevice._copy_aws_session(self._aws_session, max_connections=max_connections),
+            AwsSession.copy_session(self._aws_session, max_connections=max_connections),
             self._arn,
             task_specifications,
-            s3_destination_folder,
+            s3_destination_folder
+            or (
+                AwsSession.parse_s3_uri(os.environ.get("AMZN_BRAKET_TASK_RESULTS_S3_URI"))
+                if "AMZN_BRAKET_TASK_RESULTS_S3_URI" in os.environ
+                else None
+            )
+            or (self._aws_session.default_bucket(), "tasks"),
             shots if shots is not None else self._default_shots,
             max_parallel=max_parallel if max_parallel is not None else self._default_max_parallel,
             max_workers=max_connections,
@@ -210,22 +231,49 @@ class AwsDevice(Device):
         self._populate_properties(self._aws_session)
 
     def _get_session_and_initialize(self, session):
-        current_region = session.boto_session.region_name
+        device_region = AwsDevice.get_device_region(self._arn)
+        return (
+            self._get_regional_device_session(session)
+            if device_region
+            else self._get_non_regional_device_session(session)
+        )
+
+    def _get_regional_device_session(self, session):
+        device_region = AwsDevice.get_device_region(self._arn)
+        region_session = (
+            session
+            if session.region == device_region
+            else AwsSession.copy_session(session, device_region)
+        )
+        try:
+            self._populate_properties(region_session)
+            return region_session
+        except ClientError as e:
+            raise ValueError(f"'{self._arn}' not found") if e.response["Error"][
+                "Code"
+            ] == "ResourceNotFoundException" else e
+
+    def _get_non_regional_device_session(self, session):
+        current_region = session.region
         try:
             self._populate_properties(session)
             return session
-        except Exception:
-            if "qpu" not in self._arn:
-                raise ValueError(f"Simulator {self._arn} not found in {current_region}")
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "ResourceNotFoundException":
+                if "qpu" not in self._arn:
+                    raise ValueError(f"Simulator '{self._arn}' not found in '{current_region}'")
+            else:
+                raise e
         # Search remaining regions for QPU
         for region in frozenset(AwsDevice.REGIONS) - {current_region}:
-            region_session = AwsDevice._copy_aws_session(session, region)
+            region_session = AwsSession.copy_session(session, region)
             try:
                 self._populate_properties(region_session)
                 return region_session
-            except Exception:
-                pass
-        raise ValueError(f"QPU {self._arn} not found")
+            except ClientError as e:
+                if e.response["Error"]["Code"] != "ResourceNotFoundException":
+                    raise e
+        raise ValueError(f"QPU '{self._arn}' not found")
 
     def _populate_properties(self, session):
         metadata = session.get_device(self._arn)
@@ -253,6 +301,63 @@ class AwsDevice(Device):
         return self._arn
 
     @property
+    def is_available(self) -> bool:
+        """bool: Return if the device is currently available"""
+        if self.status != "ONLINE":
+            return False
+
+        is_available_result = False
+
+        current_datetime_utc = datetime.utcnow()
+        for execution_window in self.properties.service.executionWindows:
+            weekday = current_datetime_utc.weekday()
+            current_time_utc = current_datetime_utc.time().replace(microsecond=0)
+
+            if (
+                execution_window.windowEndHour < execution_window.windowStartHour
+                and current_time_utc < execution_window.windowEndHour
+            ):
+                weekday = (weekday - 1) % 7
+
+            matched_day = execution_window.executionDay == ExecutionDay.EVERYDAY
+            matched_day = matched_day or (
+                execution_window.executionDay == ExecutionDay.WEEKDAYS and weekday < 5
+            )
+            matched_day = matched_day or (
+                execution_window.executionDay == ExecutionDay.WEEKENDS and weekday > 4
+            )
+            ordered_days = (
+                ExecutionDay.MONDAY,
+                ExecutionDay.TUESDAY,
+                ExecutionDay.WEDNESDAY,
+                ExecutionDay.THURSDAY,
+                ExecutionDay.FRIDAY,
+                ExecutionDay.SATURDAY,
+                ExecutionDay.SUNDAY,
+            )
+            matched_day = matched_day or (
+                execution_window.executionDay in ordered_days
+                and ordered_days.index(execution_window.executionDay) == weekday
+            )
+
+            matched_time = (
+                execution_window.windowStartHour < execution_window.windowEndHour
+                and execution_window.windowStartHour
+                <= current_time_utc
+                <= execution_window.windowEndHour
+            ) or (
+                execution_window.windowEndHour < execution_window.windowStartHour
+                and (
+                    current_time_utc >= execution_window.windowStartHour
+                    or current_time_utc <= execution_window.windowEndHour
+                )
+            )
+
+            is_available_result = is_available_result or (matched_day and matched_time)
+
+        return is_available_result
+
+    @property
     # TODO: Add a link to the boto3 docs
     def properties(self) -> DeviceCapabilities:
         """DeviceCapabilities: Return the device properties
@@ -263,8 +368,8 @@ class AwsDevice(Device):
         return self._properties
 
     @property
-    def topology_graph(self) -> Graph:
-        """Graph: topology of device as a networkx `Graph` object.
+    def topology_graph(self) -> DiGraph:
+        """DiGraph: topology of device as a networkx `DiGraph` object.
         Returns `None` if the topology is not available for the device.
 
         Examples:
@@ -279,29 +384,31 @@ class AwsDevice(Device):
         """
         return self._topology_graph
 
-    def _construct_topology_graph(self) -> Graph:
+    def _construct_topology_graph(self) -> DiGraph:
         """
         Construct topology graph. If no such metadata is available, return `None`.
 
         Returns:
-            Graph: topology of QPU as a networkx `Graph` object.
+            DiGraph: topology of QPU as a networkx `DiGraph` object.
         """
         if hasattr(self.properties, "paradigm") and isinstance(
             self.properties.paradigm, GateModelQpuParadigmProperties
         ):
             if self.properties.paradigm.connectivity.fullyConnected:
-                return complete_graph(int(self.properties.paradigm.qubitCount))
+                return complete_graph(
+                    int(self.properties.paradigm.qubitCount), create_using=DiGraph()
+                )
             adjacency_lists = self.properties.paradigm.connectivity.connectivityGraph
             edges = []
             for item in adjacency_lists.items():
                 i = item[0]
                 edges.extend([(int(i), int(j)) for j in item[1]])
-            return from_edgelist(edges)
+            return from_edgelist(edges, create_using=DiGraph())
         elif hasattr(self.properties, "provider") and isinstance(
             self.properties.provider, DwaveProviderProperties
         ):
             edges = self.properties.provider.couplers
-            return from_edgelist(edges)
+            return from_edgelist(edges, create_using=DiGraph())
         else:
             return None
 
@@ -314,27 +421,6 @@ class AwsDevice(Device):
     @property
     def _default_max_parallel(self):
         return AwsDevice.DEFAULT_MAX_PARALLEL
-
-    @staticmethod
-    def _copy_aws_session(
-        aws_session: AwsSession,
-        region: Optional[str] = None,
-        max_connections: Optional[int] = None,
-    ) -> AwsSession:
-        config = Config(max_pool_connections=max_connections) if max_connections else None
-        session_region = aws_session.boto_session.region_name
-        new_region = region or session_region
-        creds = aws_session.boto_session.get_credentials()
-        if creds.method == "explicit":
-            boto_session = boto3.Session(
-                aws_access_key_id=creds.access_key,
-                aws_secret_access_key=creds.secret_key,
-                aws_session_token=creds.token,
-                region_name=new_region,
-            )
-        else:
-            boto_session = boto3.Session(region_name=new_region)
-        return AwsSession(boto_session=boto_session, config=config)
 
     def __repr__(self):
         return "Device('name': {}, 'arn': {})".format(self.name, self.arn)
@@ -397,7 +483,7 @@ class AwsDevice(Device):
             session_for_region = (
                 aws_session
                 if region == session_region
-                else AwsDevice._copy_aws_session(aws_session, region)
+                else AwsSession.copy_session(aws_session, region)
             )
             # Simulators are only instantiated in the same region as the AWS session
             types_for_region = sorted(
@@ -423,3 +509,13 @@ class AwsDevice(Device):
         devices = list(device_map.values())
         devices.sort(key=lambda x: getattr(x, order_by))
         return devices
+
+    @staticmethod
+    def get_device_region(device_arn: str) -> str:
+        try:
+            return device_arn.split(":")[3]
+        except IndexError:
+            raise ValueError(
+                f"Device ARN is not a valid format: {device_arn}. For valid Braket ARNs, "
+                "see 'https://docs.aws.amazon.com/braket/latest/developerguide/braket-devices.html'"
+            )

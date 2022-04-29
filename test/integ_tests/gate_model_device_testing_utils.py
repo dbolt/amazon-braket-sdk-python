@@ -1,4 +1,4 @@
-# Copyright 2019-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"). You
 # may not use this file except in compliance with the License. A copy of
@@ -12,14 +12,16 @@
 # language governing permissions and limitations under the License.
 
 import concurrent.futures
-from typing import Any, Dict
+import math
+from typing import Any, Dict, Union
 
 import numpy as np
 
 from braket.aws import AwsDevice
-from braket.circuits import Circuit, Observable, ResultType
+from braket.circuits import Circuit, Gate, Instruction, Observable, ResultType
 from braket.circuits.quantum_operator_helpers import get_pauli_eigenvalues
 from braket.devices import Device
+from braket.ir.openqasm import Program as OpenQasmProgram
 from braket.tasks import GateModelQuantumTaskResult
 
 
@@ -40,11 +42,14 @@ def qubit_ordering_testing(device: Device, run_kwargs: Dict[str, Any]):
 
 
 def no_result_types_testing(
-    circuit: Circuit, device: Device, run_kwargs: Dict[str, Any], expected: Dict[str, float]
+    program: Union[Circuit, OpenQasmProgram],
+    device: Device,
+    run_kwargs: Dict[str, Any],
+    expected: Dict[str, float],
 ):
     shots = run_kwargs["shots"]
     tol = get_tol(shots)
-    result = device.run(circuit, **run_kwargs).result()
+    result = device.run(program, **run_kwargs).result()
     probabilities = result.measurement_probabilities
     for bitstring in probabilities:
         assert np.allclose(probabilities[bitstring], expected[bitstring], **tol)
@@ -71,15 +76,19 @@ def result_types_observable_not_in_instructions(device: Device, run_kwargs: Dict
 
 
 def result_types_zero_shots_bell_pair_testing(
-    device: Device, include_state_vector: bool, run_kwargs: Dict[str, Any]
+    device: Device,
+    include_state_vector: bool,
+    run_kwargs: Dict[str, Any],
+    include_amplitude: bool = True,
 ):
     circuit = (
         Circuit()
         .h(0)
         .cnot(0, 1)
         .expectation(observable=Observable.H() @ Observable.X(), target=[0, 1])
-        .amplitude(["01", "10", "00", "11"])
     )
+    if include_amplitude:
+        circuit.amplitude(["01", "10", "00", "11"])
     if include_state_vector:
         circuit.state_vector()
     result = device.run(circuit, **run_kwargs).result()
@@ -95,12 +104,13 @@ def result_types_zero_shots_bell_pair_testing(
             result.get_value_by_result_type(ResultType.StateVector()),
             np.array([1, 0, 0, 1]) / np.sqrt(2),
         )
-    assert result.get_value_by_result_type(ResultType.Amplitude(["01", "10", "00", "11"])) == {
-        "01": 0j,
-        "10": 0j,
-        "00": (1 / np.sqrt(2)),
-        "11": (1 / np.sqrt(2)),
-    }
+    if include_amplitude:
+        assert result.get_value_by_result_type(ResultType.Amplitude(["01", "10", "00", "11"])) == {
+            "01": 0j,
+            "10": 0j,
+            "00": (1 / np.sqrt(2)),
+            "11": (1 / np.sqrt(2)),
+        }
 
 
 def result_types_bell_pair_full_probability_testing(device: Device, run_kwargs: Dict[str, Any]):
@@ -214,7 +224,7 @@ def get_result_types_three_qubit_circuit(theta, phi, varphi, obs, obs_targets, s
         .expectation(obs, obs_targets)
     )
     if shots:
-        circuit.add_result_type(ResultType.Sample(obs, obs_targets))
+        circuit.sample(obs, obs_targets)
     return circuit
 
 
@@ -425,6 +435,77 @@ def result_types_tensor_y_hermitian_testing(device: Device, run_kwargs: Dict[str
     )
 
 
+def result_types_noncommuting_testing(device: Device, run_kwargs: Dict[str, Any]):
+    shots = 0
+    theta = 0.432
+    phi = 0.123
+    varphi = -0.543
+    array = np.array(
+        [
+            [-6, 2 + 1j, -3, -5 + 2j],
+            [2 - 1j, 0, 2 - 1j, -5 + 4j],
+            [-3, 2 + 1j, 0, -4 + 3j],
+            [-5 - 2j, -5 - 4j, -4 - 3j, -6],
+        ]
+    )
+    obs1 = Observable.X() @ Observable.Y()
+    obs1_targets = [0, 2]
+    obs2 = Observable.Z() @ Observable.Z()
+    obs2_targets = [0, 2]
+    obs3 = Observable.Y() @ Observable.Hermitian(array)
+    obs3_targets = [0, 1, 2]
+    circuit = (
+        get_result_types_three_qubit_circuit(theta, phi, varphi, obs1, obs1_targets, shots)
+        .expectation(obs2, obs2_targets)
+        .expectation(obs3, obs3_targets)
+    )
+    result = device.run(circuit, **run_kwargs).result()
+
+    expected_mean1 = np.sin(theta) * np.sin(phi) * np.sin(varphi)
+    expected_var1 = (
+        8 * np.sin(theta) ** 2 * np.cos(2 * varphi) * np.sin(phi) ** 2
+        - np.cos(2 * (theta - phi))
+        - np.cos(2 * (theta + phi))
+        + 2 * np.cos(2 * theta)
+        + 2 * np.cos(2 * phi)
+        + 14
+    ) / 16
+
+    expected_mean2 = 0.849694136476246
+    expected_mean3 = 1.4499810303182408
+    assert np.allclose(result.values[0], expected_var1)
+    assert np.allclose(result.values[1], expected_mean1)
+    assert np.allclose(result.values[2], expected_mean2)
+    assert np.allclose(result.values[3], expected_mean3)
+
+
+def result_types_noncommuting_flipped_targets_testing(device: Device, run_kwargs: Dict[str, Any]):
+    circuit = (
+        Circuit()
+        .h(0)
+        .cnot(0, 1)
+        .expectation(observable=Observable.H() @ Observable.X(), target=[0, 1])
+        .expectation(observable=Observable.H() @ Observable.X(), target=[1, 0])
+    )
+    result = device.run(circuit, shots=0, **run_kwargs).result()
+    assert np.allclose(result.values[0], np.sqrt(2) / 2)
+    assert np.allclose(result.values[1], np.sqrt(2) / 2)
+
+
+def result_types_noncommuting_all(device: Device, run_kwargs: Dict[str, Any]):
+    array = np.array([[1, 2j], [-2j, 0]])
+    circuit = (
+        Circuit()
+        .h(0)
+        .cnot(0, 1)
+        .expectation(observable=Observable.Hermitian(array))
+        .expectation(observable=Observable.X())
+    )
+    result = device.run(circuit, shots=0, **run_kwargs).result()
+    assert np.allclose(result.values[0], [0.5, 0.5])
+    assert np.allclose(result.values[1], [0, 0])
+
+
 def multithreaded_bell_pair_testing(device: Device, run_kwargs: Dict[str, Any]):
     shots = run_kwargs["shots"]
     tol = get_tol(shots)
@@ -490,3 +571,97 @@ def batch_bell_pair_testing(device: AwsDevice, run_kwargs: Dict[str, Any]):
         assert np.allclose(result.measurement_probabilities["11"], 0.5, **tol)
         assert len(result.measurements) == shots
     assert [task.result() for task in batch.tasks] == results
+
+
+def bell_pair_openqasm_testing(device: AwsDevice, run_kwargs: Dict[str, Any]):
+    openqasm_string = (
+        "OPENQASM 3;"
+        "qubit[2] q;"
+        "bit[2] c;"
+        "h q[0];"
+        "cnot q[0], q[1];"
+        "c[0] = measure q[0];"
+        "c[1] = measure q[1];"
+    )
+    no_result_types_testing(
+        OpenQasmProgram(source=openqasm_string), device, run_kwargs, {"00": 0.5, "11": 0.5}
+    )
+
+
+def openqasm_noisy_circuit_1qubit_noise_full_probability(
+    device: Device, run_kwargs: Dict[str, Any]
+):
+    shots = run_kwargs["shots"]
+    tol = get_tol(shots)
+    openqasm_string = (
+        "OPENQASM 3;"
+        "qubit[2] q;"
+        "x q[0];"
+        "x q[1];"
+        "#pragma braket noise bit_flip(0.1) q[0]"
+        "#pragma braket result probability q[0], q[1]"
+    )
+    result = device.run(OpenQasmProgram(source=openqasm_string), **run_kwargs).result()
+    assert len(result.result_types) == 1
+    assert np.allclose(
+        result.get_value_by_result_type(ResultType.Probability(target=[0, 1])),
+        np.array([0.0, 0.1, 0, 0.9]),
+        **tol
+    )
+
+
+def openqasm_result_types_bell_pair_testing(device: Device, run_kwargs: Dict[str, Any]):
+    openqasm_string = (
+        "OPENQASM 3;"
+        "qubit[2] q;"
+        "h q[0];"
+        "cnot q[0], q[1];"
+        "#pragma braket result expectation h(q[0]) @ x(q[1])"
+        "#pragma braket result sample h(q[0]) @ x(q[1])"
+    )
+    result = device.run(OpenQasmProgram(source=openqasm_string), **run_kwargs).result()
+    assert len(result.result_types) == 2
+    assert (
+        0.6
+        < result.get_value_by_result_type(
+            ResultType.Expectation(observable=Observable.H() @ Observable.X(), target=[0, 1])
+        )
+        < 0.8
+    )
+    assert (
+        len(
+            result.get_value_by_result_type(
+                ResultType.Sample(observable=Observable.H() @ Observable.X(), target=[0, 1])
+            )
+        )
+        == run_kwargs["shots"]
+    )
+
+
+def many_layers(n_qubits: int, n_layers: int) -> Circuit:
+    """
+    Function to return circuit with many layers.
+
+    :param int n_qubits: number of qubits
+    :param int n_layers: number of layers
+    :return: Constructed easy circuit
+    :rtype: Circuit
+    """
+    qubits = range(n_qubits)
+    circuit = Circuit()  # instantiate circuit object
+    for q in range(n_qubits):
+        circuit.h(q)
+    for layer in range(n_layers):
+        if (layer + 1) % 100 != 0:
+            for qubit in range(len(qubits)):
+                angle = np.random.uniform(0, 2 * math.pi)
+                gate = np.random.choice(
+                    [Gate.Rx(angle), Gate.Ry(angle), Gate.Rz(angle), Gate.H()], 1, replace=True
+                )[0]
+                circuit.add_instruction(Instruction(gate, qubit))
+        else:
+            for q in range(0, n_qubits, 2):
+                circuit.cnot(q, q + 1)
+            for q in range(1, n_qubits - 1, 2):
+                circuit.cnot(q, q + 1)
+    return circuit

@@ -1,4 +1,4 @@
-# Copyright 2019-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"). You
 # may not use this file except in compliance with the License. A copy of
@@ -278,8 +278,12 @@ class GateModelQuantumTaskResult:
                 f"Measured qubits {measured_qubits} is not equivalent to number of qubits "
                 + f"{measurements.shape[1]} in measurements"
             )
-        result_types = GateModelQuantumTaskResult._calculate_result_types(
-            additional_metadata.action.json(), measurements, measured_qubits
+        result_types = (
+            result.resultTypes
+            if result.resultTypes
+            else GateModelQuantumTaskResult._calculate_result_types(
+                additional_metadata.action.json(), measurements, measured_qubits
+            )
         )
         values = [rt.value for rt in result_types]
         return cls(
@@ -424,7 +428,7 @@ class GateModelQuantumTaskResult:
 
         # count the basis state occurrences, and construct the probability vector
         basis_states, counts = np.unique(indices, return_counts=True)
-        probabilities = np.zeros([2 ** num_measured_qubits], dtype=np.float64)
+        probabilities = np.zeros([2**num_measured_qubits], dtype=np.float64)
         probabilities[basis_states] = counts / shots
         return probabilities
 

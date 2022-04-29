@@ -1,4 +1,4 @@
-# Copyright 2019-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"). You
 # may not use this file except in compliance with the License. A copy of
@@ -11,7 +11,8 @@
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 
-from typing import Iterable
+import itertools
+from typing import Dict, Iterable
 
 import numpy as np
 
@@ -21,6 +22,7 @@ from braket.circuits.instruction import Instruction
 from braket.circuits.noise import (
     DampingNoise,
     GeneralizedAmplitudeDampingNoise,
+    MultiQubitPauliNoise,
     Noise,
     PauliNoise,
     SingleProbabilisticNoise,
@@ -73,7 +75,7 @@ class BitFlip(SingleProbabilisticNoise):
     def __init__(self, probability: float):
         super().__init__(
             probability=probability,
-            qubit_count=1,
+            qubit_count=None,
             ascii_symbols=["BF({:.2g})".format(probability)],
         )
 
@@ -84,6 +86,10 @@ class BitFlip(SingleProbabilisticNoise):
         K0 = np.sqrt(1 - self.probability) * np.eye(2, dtype=complex)
         K1 = np.sqrt(self.probability) * np.array([[0.0, 1.0], [1.0, 0.0]], dtype=complex)
         return [K0, K1]
+
+    @staticmethod
+    def fixed_qubit_count() -> int:
+        return 1
 
     @staticmethod
     @circuit.subroutine(register=True)
@@ -138,7 +144,7 @@ class PhaseFlip(SingleProbabilisticNoise):
     def __init__(self, probability: float):
         super().__init__(
             probability=probability,
-            qubit_count=1,
+            qubit_count=None,
             ascii_symbols=["PF({:.2g})".format(probability)],
         )
 
@@ -149,6 +155,10 @@ class PhaseFlip(SingleProbabilisticNoise):
         K0 = np.sqrt(1 - self.probability) * np.eye(2, dtype=complex)
         K1 = np.sqrt(self.probability) * np.array([[1.0, 0.0], [0.0, -1.0]], dtype=complex)
         return [K0, K1]
+
+    @staticmethod
+    def fixed_qubit_count() -> int:
+        return 1
 
     @staticmethod
     @circuit.subroutine(register=True)
@@ -221,7 +231,7 @@ class PauliChannel(PauliNoise):
             probX=probX,
             probY=probY,
             probZ=probZ,
-            qubit_count=1,
+            qubit_count=None,
             ascii_symbols=["PC({:.2g},{:.2g},{:.2g})".format(probX, probY, probZ)],
         )
 
@@ -236,6 +246,10 @@ class PauliChannel(PauliNoise):
         K2 = np.sqrt(self.probY) * 1j * np.array([[0.0, -1.0], [1.0, 0.0]], dtype=complex)
         K3 = np.sqrt(self.probZ) * np.array([[1.0, 0.0], [0.0, -1.0]], dtype=complex)
         return [K0, K1, K2, K3]
+
+    @staticmethod
+    def fixed_qubit_count() -> int:
+        return 1
 
     @staticmethod
     @circuit.subroutine(register=True)
@@ -311,7 +325,7 @@ class Depolarizing(SingleProbabilisticNoise_34):
     def __init__(self, probability: float):
         super().__init__(
             probability=probability,
-            qubit_count=1,
+            qubit_count=None,
             ascii_symbols=["DEPO({:.2g})".format(probability)],
         )
 
@@ -324,6 +338,10 @@ class Depolarizing(SingleProbabilisticNoise_34):
         K2 = np.sqrt(self.probability / 3) * 1j * np.array([[0.0, -1.0], [1.0, 0.0]], dtype=complex)
         K3 = np.sqrt(self.probability / 3) * np.array([[1.0, 0.0], [0.0, -1.0]], dtype=complex)
         return [K0, K1, K2, K3]
+
+    @staticmethod
+    def fixed_qubit_count() -> int:
+        return 1
 
     @staticmethod
     @circuit.subroutine(register=True)
@@ -399,7 +417,7 @@ class TwoQubitDepolarizing(SingleProbabilisticNoise_1516):
     def __init__(self, probability: float):
         super().__init__(
             probability=probability,
-            qubit_count=2,
+            qubit_count=None,
             ascii_symbols=["DEPO({:.2g})".format(probability)] * 2,
         )
 
@@ -423,6 +441,10 @@ class TwoQubitDepolarizing(SingleProbabilisticNoise_1516):
         K_list[1:] = [np.sqrt(self._probability / 15) * i for i in K_list[1:]]
 
         return K_list
+
+    @staticmethod
+    def fixed_qubit_count() -> int:
+        return 2
 
     @staticmethod
     @circuit.subroutine(register=True)
@@ -483,7 +505,7 @@ class TwoQubitDephasing(SingleProbabilisticNoise_34):
     def __init__(self, probability: float):
         super().__init__(
             probability=probability,
-            qubit_count=2,
+            qubit_count=None,
             ascii_symbols=["DEPH({:.2g})".format(probability)] * 2,
         )
 
@@ -502,6 +524,10 @@ class TwoQubitDephasing(SingleProbabilisticNoise_34):
         K3 = np.sqrt(self._probability / 3) * np.kron(SZ, SZ)
 
         return [K0, K1, K2, K3]
+
+    @staticmethod
+    def fixed_qubit_count() -> int:
+        return 2
 
     @staticmethod
     @circuit.subroutine(register=True)
@@ -526,6 +552,135 @@ class TwoQubitDephasing(SingleProbabilisticNoise_34):
 
 
 Noise.register_noise(TwoQubitDephasing)
+
+
+class TwoQubitPauliChannel(MultiQubitPauliNoise):
+    """Two-Qubit Pauli noise channel which transforms a
+        density matrix :math:`\\rho` according to:
+
+    .. math::
+        \\rho \\Rightarrow (1-p) \\rho +
+            p_{IX} IX \\rho IX^{\\dagger} +
+            p_{IY} IY \\rho IY^{\\dagger} +
+            p_{IZ} IZ \\rho IZ^{\\dagger} +
+            p_{XI} XI \\rho XI^{\\dagger} +
+            p_{XX} XX \\rho XX^{\\dagger} +
+            p_{XY} XY \\rho XY^{\\dagger} +
+            p_{XZ} XZ \\rho XZ^{\\dagger} +
+            p_{YI} YI \\rho YI^{\\dagger} +
+            p_{YX} YX \\rho YX^{\\dagger} +
+            p_{YY} YY \\rho YY^{\\dagger} +
+            p_{YZ} YZ \\rho YZ^{\\dagger} +
+            p_{ZI} ZI \\rho ZI^{\\dagger} +
+            p_{ZX} ZX \\rho ZX^{\\dagger} +
+            p_{ZY} ZY \\rho ZY^{\\dagger} +
+            p_{ZZ} ZZ \\rho ZZ^{\\dagger})
+    where
+
+    .. math::
+        I = \\left(
+                \\begin{matrix}
+                    1 & 0 \\\\
+                    0 & 1
+                \\end{matrix}
+            \\right)
+
+        X = \\left(
+                \\begin{matrix}
+                    0 & 1 \\\\
+                    1 & 0
+                \\end{matrix}
+            \\right)
+
+        Y = \\left(
+                \\begin{matrix}
+                    0 & -i \\\\
+                    i &  0
+                \\end{matrix}
+            \\right)
+
+        Z = \\left(
+                \\begin{matrix}
+                    1 & 0 \\\\
+                    0 & -1
+                \\end{matrix}
+            \\right)
+
+        p = \\text{sum of all probabilities}
+
+    This noise channel is shown as `PC_2({"pauli_string": probability})` in circuit diagrams.
+    """
+
+    _paulis = {
+        "I": np.array([[1.0, 0.0], [0.0, 1.0]], dtype=complex),
+        "X": np.array([[0.0, 1.0], [1.0, 0.0]], dtype=complex),
+        "Y": np.array([[0.0, -1.0j], [1.0j, 0.0]], dtype=complex),
+        "Z": np.array([[1.0, 0.0], [0.0, -1.0]], dtype=complex),
+    }
+    _tensor_products_strings = itertools.product(_paulis.keys(), repeat=2)
+    _names_list = ["".join(x) for x in _tensor_products_strings]
+
+    def __init__(self, probabilities: Dict[str, float]):
+        super().__init__(
+            probabilities=probabilities,
+            qubit_count=None,
+            ascii_symbols=[
+                f"PC2({probabilities})",
+                f"PC2({probabilities})",
+            ],
+        )
+
+        total_prob = sum(self.probabilities.values())
+
+        K_list = [np.sqrt(1 - total_prob) * np.identity(4)]  # "II" element
+        for pstring in self._names_list[1:]:  # ignore "II"
+            if pstring in self.probabilities:
+                mat = np.sqrt(self.probabilities[pstring]) * np.kron(
+                    self._paulis[pstring[0]], self._paulis[pstring[1]]
+                )
+                K_list.append(mat)
+            else:
+                K_list.append(np.zeros((4, 4)))
+        self._matrix = K_list
+
+    def to_ir(self, target: QubitSet):
+        return ir.MultiQubitPauliChannel.construct(
+            targets=[target[0], target[1]], probabilities=self.probabilities
+        )
+
+    def to_matrix(self) -> Iterable[np.ndarray]:
+        return self._matrix
+
+    @staticmethod
+    def fixed_qubit_count() -> int:
+        return 2
+
+    @staticmethod
+    @circuit.subroutine(register=True)
+    def two_qubit_pauli_channel(
+        target1: QubitInput, target2: QubitInput, probabilities: Dict[str, float]
+    ) -> Iterable[Instruction]:
+        """Registers this function into the circuit class.
+
+        Args:
+            target (Qubit, int, or iterable of Qubit / int): Target qubits
+            probability (float): Probability of two-qubit Pauli channel.
+
+        Returns:
+            Iterable[Instruction]: `Iterable` of Depolarizing instructions.
+
+        Examples:
+            >>> circ = Circuit().two_qubit_pauli_channel(0, 1, {"XX": 0.1})
+        """
+        return [
+            Instruction(
+                Noise.TwoQubitPauliChannel(probabilities=probabilities),
+                target=[target1, target2],
+            )
+        ]
+
+
+Noise.register_noise(TwoQubitPauliChannel)
 
 
 class AmplitudeDamping(DampingNoise):
@@ -555,7 +710,7 @@ class AmplitudeDamping(DampingNoise):
     def __init__(self, gamma: float):
         super().__init__(
             gamma=gamma,
-            qubit_count=1,
+            qubit_count=None,
             ascii_symbols=["AD({:.2g})".format(gamma)],
         )
 
@@ -566,6 +721,10 @@ class AmplitudeDamping(DampingNoise):
         K0 = np.array([[1.0, 0.0], [0.0, np.sqrt(1 - self.gamma)]], dtype=complex)
         K1 = np.array([[0.0, np.sqrt(self.gamma)], [0.0, 0.0]], dtype=complex)
         return [K0, K1]
+
+    @staticmethod
+    def fixed_qubit_count() -> int:
+        return 1
 
     @staticmethod
     @circuit.subroutine(register=True)
@@ -633,7 +792,7 @@ class GeneralizedAmplitudeDamping(GeneralizedAmplitudeDampingNoise):
         super().__init__(
             gamma=gamma,
             probability=probability,
-            qubit_count=1,
+            qubit_count=None,
             ascii_symbols=["GAD({:.2g},{:.2g})".format(gamma, probability)],
         )
 
@@ -652,6 +811,10 @@ class GeneralizedAmplitudeDamping(GeneralizedAmplitudeDampingNoise):
         K2 = np.sqrt(1 - self.probability) * np.array([[np.sqrt(1 - self.gamma), 0.0], [0.0, 1.0]])
         K3 = np.sqrt(1 - self.probability) * np.array([[0.0, 0.0], [np.sqrt(self.gamma), 0.0]])
         return [K0, K1, K2, K3]
+
+    @staticmethod
+    def fixed_qubit_count() -> int:
+        return 1
 
     @staticmethod
     @circuit.subroutine(register=True)
@@ -712,7 +875,7 @@ class PhaseDamping(DampingNoise):
     def __init__(self, gamma: float):
         super().__init__(
             gamma=gamma,
-            qubit_count=1,
+            qubit_count=None,
             ascii_symbols=["PD({:.2g})".format(gamma)],
         )
 
@@ -723,6 +886,10 @@ class PhaseDamping(DampingNoise):
         K0 = np.array([[1.0, 0.0], [0.0, np.sqrt(1 - self.gamma)]], dtype=complex)
         K1 = np.array([[0.0, 0.0], [0.0, np.sqrt(self.gamma)]], dtype=complex)
         return [K0, K1]
+
+    @staticmethod
+    def fixed_qubit_count() -> int:
+        return 1
 
     @staticmethod
     @circuit.subroutine(register=True)
@@ -753,7 +920,7 @@ class Kraus(Noise):
 
     Args:
         matrices (Iterable[np.array]): A list of matrices that define a noise
-            channel. These matrices need to satisify the requirement of CPTP map.
+            channel. These matrices need to satisfy the requirement of CPTP map.
         display_name (str): Name to be used for an instance of this general noise
             channel for circuit diagrams. Defaults to `KR`.
 
@@ -761,7 +928,7 @@ class Kraus(Noise):
         ValueError: If any matrix in `matrices` is not a two-dimensional square
             matrix,
             or has a dimension length which is not a positive exponent of 2,
-            or the `matrices` do not satisify CPTP condition.
+            or the `matrices` do not satisfy CPTP condition.
     """
 
     def __init__(self, matrices: Iterable[np.ndarray], display_name: str = "KR"):

@@ -1,4 +1,4 @@
-# Copyright 2019-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"). You
 # may not use this file except in compliance with the License. A copy of
@@ -38,8 +38,10 @@ from braket.device_schema.dwave.dwave_advantage_device_level_parameters_v1 impor
     DwaveAdvantageDeviceLevelParameters,
 )
 from braket.device_schema.ionq import IonqDeviceParameters
+from braket.device_schema.oqc import OqcDeviceParameters
 from braket.device_schema.rigetti import RigettiDeviceParameters
 from braket.device_schema.simulators import GateModelSimulatorDeviceParameters
+from braket.ir.openqasm import Program as OpenQasmProgram
 from braket.schema_common import BraketSchemaBase
 from braket.task_result import AnnealingTaskResult, GateModelTaskResult
 from braket.tasks import AnnealingQuantumTaskResult, GateModelQuantumTaskResult, QuantumTask
@@ -62,7 +64,7 @@ class AwsQuantumTask(QuantumTask):
     def create(
         aws_session: AwsSession,
         device_arn: str,
-        task_specification: Union[Circuit, Problem],
+        task_specification: Union[Circuit, Problem, OpenQasmProgram],
         s3_destination_folder: AwsSession.S3DestinationFolder,
         shots: int,
         device_parameters: Dict[str, Any] = None,
@@ -100,7 +102,9 @@ class AwsQuantumTask(QuantumTask):
                 without any rewiring downstream, if this is supported by the device.
                 Only applies to digital, gate-based circuits (as opposed to annealing problems).
                 If ``True``, no qubit rewiring is allowed; if ``False``, qubit rewiring is allowed.
-                Default: ``False``.
+                If the circuit has frozen qubits (``circuit.has_frozen_qubits==True``), then this
+                must be True, or running will throw an exception.
+                Default: False
 
             tags (Dict[str, str]): Tags, which are Key-Value pairs to add to this quantum task.
                 An example would be:
@@ -131,6 +135,11 @@ class AwsQuantumTask(QuantumTask):
         )
         if tags is not None:
             create_task_kwargs.update({"tags": tags})
+        if isinstance(task_specification, Circuit) and task_specification.parameters:
+            raise ValueError(
+                f"Cannot execute circuit with unbound parameters: "
+                f"{task_specification.parameters}"
+            )
         return _create_internal(
             task_specification,
             aws_session,
@@ -253,9 +262,13 @@ class AwsQuantumTask(QuantumTask):
         return self._status(use_cached_value)
 
     def _status(self, use_cached_value=False):
-        status = self.metadata(use_cached_value).get("status")
+        metadata = self.metadata(use_cached_value)
+        status = metadata.get("status")
         if not use_cached_value and status in self.NO_RESULT_TERMINAL_STATES:
-            self._logger.warning(f"Task is in terminal state {status} and no result is available")
+            self._logger.warning(f"Task is in terminal state {status} and no result is available.")
+            if status == "FAILED":
+                failure_reason = metadata.get("failureReason", "unknown")
+                self._logger.warning(f"Task failure reason is: {failure_reason}.")
         return status
 
     def _update_status_if_nonterminal(self):
@@ -385,7 +398,7 @@ class AwsQuantumTask(QuantumTask):
     def __eq__(self, other) -> bool:
         if isinstance(other, AwsQuantumTask):
             return self.id == other.id
-        return NotImplemented
+        return False
 
     def __hash__(self) -> int:
         return hash(self.id)
@@ -407,6 +420,22 @@ def _create_internal(
 
 @_create_internal.register
 def _(
+    open_qasm_program: OpenQasmProgram,
+    aws_session: AwsSession,
+    create_task_kwargs: Dict[str, Any],
+    device_arn: str,
+    _device_parameters: Union[dict, BraketSchemaBase],  # Not currently used for OpenQasmProgram
+    _disable_qubit_rewiring,
+    *args,
+    **kwargs,
+) -> AwsQuantumTask:
+    create_task_kwargs.update({"action": open_qasm_program.json()})
+    task_arn = aws_session.create_quantum_task(**create_task_kwargs)
+    return AwsQuantumTask(task_arn, aws_session, *args, **kwargs)
+
+
+@_create_internal.register
+def _(
     circuit: Circuit,
     aws_session: AwsSession,
     create_task_kwargs: Dict[str, Any],
@@ -417,6 +446,10 @@ def _(
     **kwargs,
 ) -> AwsQuantumTask:
     validate_circuit_and_shots(circuit, create_task_kwargs["shots"])
+    if circuit.qubits_frozen and not disable_qubit_rewiring:
+        raise ValueError(
+            "disable_qubit_rewiring must be True to run circuit with compiler directives"
+        )
 
     # TODO: Update this to use `deviceCapabilities` from Amazon Braket's GetDevice operation
     # in order to decide what parameters to build.
@@ -427,6 +460,8 @@ def _(
         device_parameters = IonqDeviceParameters(paradigmParameters=paradigm_parameters)
     elif "rigetti" in device_arn:
         device_parameters = RigettiDeviceParameters(paradigmParameters=paradigm_parameters)
+    elif "oqc" in device_arn:
+        device_parameters = OqcDeviceParameters(paradigmParameters=paradigm_parameters)
     else:  # default to use simulator
         device_parameters = GateModelSimulatorDeviceParameters(
             paradigmParameters=paradigm_parameters
@@ -451,7 +486,7 @@ def _(
         DwaveAdvantageDeviceParameters,
         Dwave2000QDeviceParameters,
     ],
-    disable_qubit_rewiring,
+    _,
     *args,
     **kwargs,
 ) -> AwsQuantumTask:

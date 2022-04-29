@@ -1,4 +1,4 @@
-# Copyright 2019-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"). You
 # may not use this file except in compliance with the License. A copy of
@@ -15,7 +15,7 @@ import math
 import random
 
 import pytest
-from gate_model_device_testing_utils import no_result_types_testing
+from gate_model_device_testing_utils import bell_pair_openqasm_testing, no_result_types_testing
 
 from braket.aws import AwsDevice
 from braket.circuits import Circuit
@@ -52,6 +52,14 @@ def test_qft_iqft_h(simulator_arn, aws_session, s3_destination_folder):
     )
 
 
+@pytest.mark.parametrize("simulator_arn", SIMULATOR_ARNS)
+def test_bell_pair_openqasm(simulator_arn, aws_session, s3_destination_folder):
+    device = AwsDevice(simulator_arn, aws_session)
+    bell_pair_openqasm_testing(
+        device, {"shots": SHOTS, "s3_destination_folder": s3_destination_folder}
+    )
+
+
 def _ghz(num_qubits):
     circuit = Circuit()
     circuit.h(0)
@@ -64,7 +72,7 @@ def _qft(circuit, num_qubits):
     for i in range(num_qubits):
         circuit.h(i)
         for j in range(1, num_qubits - i):
-            circuit.cphaseshift(i + j, i, math.pi / (2 ** j))
+            circuit.cphaseshift(i + j, i, math.pi / (2**j))
 
     for qubit in range(math.floor(num_qubits / 2)):
         circuit.swap(qubit, num_qubits - qubit - 1)
@@ -78,7 +86,7 @@ def _inverse_qft(circuit, num_qubits):
 
     for i in reversed(range(num_qubits)):
         for j in reversed(range(1, num_qubits - i)):
-            circuit.cphaseshift(i + j, i, -math.pi / (2 ** j))
+            circuit.cphaseshift(i + j, i, -math.pi / (2**j))
         circuit.h(i)
 
     return circuit

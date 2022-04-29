@@ -1,4 +1,4 @@
-# Copyright 2019-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"). You
 # may not use this file except in compliance with the License. A copy of
@@ -13,7 +13,15 @@
 
 import numpy as np
 
-from braket.circuits import AsciiCircuitDiagram, Circuit, Gate, Instruction, Observable, Operator
+from braket.circuits import (
+    AsciiCircuitDiagram,
+    Circuit,
+    FreeParameter,
+    Gate,
+    Instruction,
+    Observable,
+    Operator,
+)
 
 
 def test_empty_circuit():
@@ -25,6 +33,66 @@ def test_one_gate_one_qubit():
     expected = ("T  : |0|", "        ", "q0 : -H-", "", "T  : |0|")
     expected = "\n".join(expected)
     assert AsciiCircuitDiagram.build_diagram(circ) == expected
+
+
+def test_one_gate_one_qubit_rotation():
+    circ = Circuit().rx(angle=3.14, target=0)
+    # Column formats to length of the gate plus the ascii representation for the angle.
+    expected = ("T  : |   0    |", "               ", "q0 : -Rx(3.14)-", "", "T  : |   0    |")
+    expected = "\n".join(expected)
+
+    assert AsciiCircuitDiagram.build_diagram(circ) == expected
+
+
+def test_one_gate_one_qubit_rotation_with_parameter():
+    theta = FreeParameter("theta")
+    circ = Circuit().rx(angle=theta, target=0)
+    # Column formats to length of the gate plus the ascii representation for the angle.
+    expected = (
+        "T  : |    0    |",
+        "                ",
+        "q0 : -Rx(theta)-",
+        "",
+        "T  : |    0    |",
+        "",
+        "Unassigned parameters: {theta}.",
+    )
+    expected = "\n".join(expected)
+    assert AsciiCircuitDiagram.build_diagram(circ) == expected
+
+
+def test_one_gate_one_qubit_rotation_with_unicode():
+    theta = FreeParameter("\u03B8")
+    circ = Circuit().rx(angle=theta, target=0)
+    # Column formats to length of the gate plus the ascii representation for the angle.
+    expected = (
+        "T  : |  0  |",
+        "            ",
+        "q0 : -Rx(θ)-",
+        "",
+        "T  : |  0  |",
+        "",
+        "Unassigned parameters: {θ}.",
+    )
+    expected = "\n".join(expected)
+    assert AsciiCircuitDiagram.build_diagram(circ) == expected
+
+
+def test_one_gate_one_qubit_rotation_with_parameter_assigned():
+    theta = FreeParameter("theta")
+    circ = Circuit().rx(angle=theta, target=0)
+    new_circ = circ.make_bound_circuit({"theta": np.pi})
+    # Column formats to length of the gate plus the ascii representation for the angle.
+    expected = (
+        "T  : |   0    |",
+        "               ",
+        "q0 : -Rx(3.14)-",
+        "",
+        "T  : |   0    |",
+    )
+    expected = "\n".join(expected)
+    print(AsciiCircuitDiagram.build_diagram(new_circ))
+    assert AsciiCircuitDiagram.build_diagram(new_circ) == expected
 
 
 def test_qubit_width():
@@ -200,6 +268,179 @@ def test_connector_across_non_used_qubits():
         "q101 : -H-----",
         "",
         "T    : | 0 |1|",
+    )
+    expected = "\n".join(expected)
+    assert AsciiCircuitDiagram.build_diagram(circ) == expected
+
+
+def test_verbatim_1q_no_preceding():
+    circ = Circuit().add_verbatim_box(Circuit().h(0))
+    expected = (
+        "T  : |      0      |1|     2     |",
+        "                                  ",
+        "q0 : -StartVerbatim-H-EndVerbatim-",
+        "",
+        "T  : |      0      |1|     2     |",
+    )
+    expected = "\n".join(expected)
+    assert AsciiCircuitDiagram.build_diagram(circ) == expected
+
+
+def test_verbatim_1q_preceding():
+    circ = Circuit().h(0).add_verbatim_box(Circuit().h(0))
+    expected = (
+        "T  : |0|      1      |2|     3     |",
+        "                                    ",
+        "q0 : -H-StartVerbatim-H-EndVerbatim-",
+        "",
+        "T  : |0|      1      |2|     3     |",
+    )
+    expected = "\n".join(expected)
+    assert AsciiCircuitDiagram.build_diagram(circ) == expected
+
+
+def test_verbatim_1q_following():
+    circ = Circuit().add_verbatim_box(Circuit().h(0)).h(0)
+    expected = (
+        "T  : |      0      |1|     2     |3|",
+        "                                    ",
+        "q0 : -StartVerbatim-H-EndVerbatim-H-",
+        "",
+        "T  : |      0      |1|     2     |3|",
+    )
+    expected = "\n".join(expected)
+    assert AsciiCircuitDiagram.build_diagram(circ) == expected
+
+
+def test_verbatim_2q_no_preceding():
+    circ = Circuit().add_verbatim_box(Circuit().h(0).cnot(0, 1))
+    expected = (
+        "T  : |      0      |1|2|     3     |",
+        "                                    ",
+        "q0 : -StartVerbatim-H-C-EndVerbatim-",
+        "      |               | |           ",
+        "q1 : -*************---X-***********-",
+        "",
+        "T  : |      0      |1|2|     3     |",
+    )
+    expected = "\n".join(expected)
+    assert AsciiCircuitDiagram.build_diagram(circ) == expected
+
+
+def test_verbatim_2q_preceding():
+    circ = Circuit().h(0).add_verbatim_box(Circuit().h(0).cnot(0, 1))
+    expected = (
+        "T  : |0|      1      |2|3|     4     |",
+        "                                      ",
+        "q0 : -H-StartVerbatim-H-C-EndVerbatim-",
+        "        |               | |           ",
+        "q1 : ---*************---X-***********-",
+        "",
+        "T  : |0|      1      |2|3|     4     |",
+    )
+    expected = "\n".join(expected)
+    assert AsciiCircuitDiagram.build_diagram(circ) == expected
+
+
+def test_verbatim_2q_following():
+    circ = Circuit().add_verbatim_box(Circuit().h(0).cnot(0, 1)).h(0)
+    expected = (
+        "T  : |      0      |1|2|     3     |4|",
+        "                                      ",
+        "q0 : -StartVerbatim-H-C-EndVerbatim-H-",
+        "      |               | |             ",
+        "q1 : -*************---X-***********---",
+        "",
+        "T  : |      0      |1|2|     3     |4|",
+    )
+    expected = "\n".join(expected)
+    assert AsciiCircuitDiagram.build_diagram(circ) == expected
+
+
+def test_verbatim_3q_no_preceding():
+    circ = Circuit().add_verbatim_box(Circuit().h(0).cnot(0, 1).cnot(1, 2))
+    expected = (
+        "T  : |      0      |1|2|3|     4     |",
+        "                                      ",
+        "q0 : -StartVerbatim-H-C---EndVerbatim-",
+        "      |               |   |           ",
+        "q1 : -|---------------X-C-|-----------",
+        "      |                 | |           ",
+        "q2 : -*************-----X-***********-",
+        "",
+        "T  : |      0      |1|2|3|     4     |",
+    )
+    expected = "\n".join(expected)
+    assert AsciiCircuitDiagram.build_diagram(circ) == expected
+
+
+def test_verbatim_3q_preceding():
+    circ = Circuit().h(0).add_verbatim_box(Circuit().h(0).cnot(0, 1).cnot(1, 2))
+    expected = (
+        "T  : |0|      1      |2|3|4|     5     |",
+        "                                        ",
+        "q0 : -H-StartVerbatim-H-C---EndVerbatim-",
+        "        |               |   |           ",
+        "q1 : ---|---------------X-C-|-----------",
+        "        |                 | |           ",
+        "q2 : ---*************-----X-***********-",
+        "",
+        "T  : |0|      1      |2|3|4|     5     |",
+    )
+    expected = "\n".join(expected)
+    assert AsciiCircuitDiagram.build_diagram(circ) == expected
+
+
+def test_verbatim_3q_following():
+    circ = Circuit().add_verbatim_box(Circuit().h(0).cnot(0, 1).cnot(1, 2)).h(0)
+    expected = (
+        "T  : |      0      |1|2|3|     4     |5|",
+        "                                        ",
+        "q0 : -StartVerbatim-H-C---EndVerbatim-H-",
+        "      |               |   |             ",
+        "q1 : -|---------------X-C-|-------------",
+        "      |                 | |             ",
+        "q2 : -*************-----X-***********---",
+        "",
+        "T  : |      0      |1|2|3|     4     |5|",
+    )
+    expected = "\n".join(expected)
+    assert AsciiCircuitDiagram.build_diagram(circ) == expected
+
+
+def test_verbatim_different_qubits():
+    circ = Circuit().h(1).add_verbatim_box(Circuit().h(0)).cnot(3, 4)
+    expected = (
+        "T  : |0|      1      |2|     3     |4|",
+        "                                      ",
+        "q0 : ---StartVerbatim-H-EndVerbatim---",
+        "        |               |             ",
+        "q1 : -H-|---------------|-------------",
+        "        |               |             ",
+        "q3 : ---|---------------|-----------C-",
+        "        |               |           | ",
+        "q4 : ---*************---***********-X-",
+        "",
+        "T  : |0|      1      |2|     3     |4|",
+    )
+    expected = "\n".join(expected)
+    assert AsciiCircuitDiagram.build_diagram(circ) == expected
+
+
+def test_verbatim_qubset_qubits():
+    circ = Circuit().h(1).cnot(0, 1).cnot(1, 2).add_verbatim_box(Circuit().h(1)).cnot(2, 3)
+    expected = (
+        "T  : |0|1|2|      3      |4|     5     |6|",
+        "                                          ",
+        "q0 : ---C---StartVerbatim---EndVerbatim---",
+        "        |   |               |             ",
+        "q1 : -H-X-C-|-------------H-|-------------",
+        "          | |               |             ",
+        "q2 : -----X-|---------------|-----------C-",
+        "            |               |           | ",
+        "q3 : -------*************---***********-X-",
+        "",
+        "T  : |0|1|2|      3      |4|     5     |6|",
     )
     expected = "\n".join(expected)
     assert AsciiCircuitDiagram.build_diagram(circ) == expected

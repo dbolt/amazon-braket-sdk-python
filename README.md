@@ -63,6 +63,12 @@ You can also check your version of `amazon-braket-sdk` from within Python:
 >>> braket_sdk.__version__
 ```
 
+### Updating the Amazon Braket Python SDK
+You can update the version of the amazon-braket-sdk you have installed by using the following command:
+```bash
+pip install amazon-braket-sdk --upgrade --upgrade-strategy eager
+```
+
 ## Usage
 
 ### Running a circuit on an AWS simulator
@@ -91,6 +97,24 @@ circuits = [bell for _ in range(5)]
 batch = device.run_batch(circuits, s3_folder, shots=100)
 print(batch.results()[0].measurement_counts)  # The result of the first task in the batch
 ```
+
+### Running a hybrid job
+
+```python
+from braket.aws import AwsQuantumJob
+
+job = AwsQuantumJob.create(
+    device="arn:aws:braket:::device/quantum-simulator/amazon/sv1",
+    source_module="job.py",
+    entry_point="job:run_job",
+    wait_until_complete=True,
+)
+print(job.result())
+```
+where `run_job` is a function in the file `job.py`.
+
+
+The code sample imports the Amazon Braket framework, then creates a hybrid job with the entry point being the `run_job` function. The hybrid job creates quantum tasks against the SV1 AWS Simulator. The job runs synchronously, and prints logs until it completes. The complete example can be found in `../examples/job.py`.
 
 ### Available Simulators
 Amazon Braket provides access to two types of simulators: fully managed simulators, available through the Amazon Braket service, and the local simulators that are part of the Amazon Braket SDK.
@@ -196,6 +220,7 @@ After you create a profile, use the following command to set the `AWS_PROFILE` s
 ```bash
 export AWS_PROFILE=YOUR_PROFILE_NAME
 ```
+To run the integration tests for local jobs, you need to have Docker installed and running. To install Docker follow these instructions: [Install Docker](https://docs.docker.com/get-docker/)
 
 Run the tests:
 
@@ -208,6 +233,20 @@ As with unit tests, you can also pass in various pytest arguments:
 ```bash
 tox -e integ-tests -- your-arguments
 ```
+
+## Support
+
+### Issues and Bug Reports
+
+If you encounter bugs or face issues while using the SDK, please let us know by posting 
+the issue on our [Github issue tracker](https://github.com/aws/amazon-braket-sdk-python/issues/).  
+For issues with the Amazon Braket service in general, please use the [Developer Forum](https://forums.aws.amazon.com/forum.jspa?forumID=370).
+
+### Feedback and Feature Requests
+
+If you have feedback or features that you would like to see on Amazon Braket, we would love to hear from you!  
+[Github issues](https://github.com/aws/amazon-braket-sdk-python/issues/) is our preferred mechanism for collecting feedback and feature requests, allowing other users 
+to engage in the conversation, and +1 issues to help drive priority. 
 
 ## License
 This project is licensed under the Apache-2.0 License.

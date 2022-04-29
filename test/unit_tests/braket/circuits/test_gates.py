@@ -1,4 +1,4 @@
-# Copyright 2019-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"). You
 # may not use this file except in compliance with the License. A copy of
@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 
 import braket.ir.jaqcd as ir
-from braket.circuits import Circuit, Gate, Instruction, QubitSet
+from braket.circuits import Circuit, FreeParameter, Gate, Instruction, QubitSet
 from braket.ir.jaqcd.shared_models import (
     Angle,
     DoubleControl,
@@ -42,6 +42,7 @@ testdata = [
     (Gate.Ry, "ry", ir.Ry, [SingleTarget, Angle], {}),
     (Gate.Rz, "rz", ir.Rz, [SingleTarget, Angle], {}),
     (Gate.CNot, "cnot", ir.CNot, [SingleTarget, SingleControl], {}),
+    (Gate.CV, "cv", ir.CV, [SingleTarget, SingleControl], {}),
     (Gate.CCNot, "ccnot", ir.CCNot, [SingleTarget, DoubleControl], {}),
     (Gate.Swap, "swap", ir.Swap, [DoubleTarget], {}),
     (Gate.CSwap, "cswap", ir.CSwap, [SingleControl, DoubleTarget], {}),
@@ -73,6 +74,7 @@ testdata = [
     ),
     (Gate.CY, "cy", ir.CY, [SingleTarget, SingleControl], {}),
     (Gate.CZ, "cz", ir.CZ, [SingleTarget, SingleControl], {}),
+    (Gate.ECR, "ecr", ir.ECR, [DoubleTarget], {}),
     (Gate.XX, "xx", ir.XX, [DoubleTarget, Angle], {}),
     (Gate.YY, "yy", ir.YY, [DoubleTarget, Angle], {}),
     (Gate.ZZ, "zz", ir.ZZ, [DoubleTarget, Angle], {}),
@@ -100,12 +102,29 @@ testdata = [
 ]
 
 
+parameterizable_gates = [
+    Gate.Rx,
+    Gate.Ry,
+    Gate.Rz,
+    Gate.PhaseShift,
+    Gate.PSwap,
+    Gate.XX,
+    Gate.XY,
+    Gate.YY,
+    Gate.ZZ,
+    Gate.CPhaseShift,
+    Gate.CPhaseShift00,
+    Gate.CPhaseShift01,
+    Gate.CPhaseShift10,
+]
+
+
 invalid_unitary_matrices = [
     (np.array([[1]])),
     (np.array([1])),
     (np.array([0, 1, 2])),
     (np.array([[0, 1], [1, 2], [3, 4]])),
-    (np.array([[0, 1, 2], [2, 3]])),
+    (np.array([[0, 1, 2], [2, 3]], dtype=object)),
     (np.array([[0, 1, 2], [3, 4, 5], [6, 7, 8]])),
     (np.array([[0, 1], [1, 1]])),
 ]
@@ -296,6 +315,14 @@ def test_gate_to_matrix(testclass, subroutine_name, irclass, irsubclasses, kwarg
     assert gate1.matrix_equivalence(gate2)
 
 
+@pytest.mark.parametrize("testclass,subroutine_name,irclass,irsubclasses,kwargs", testdata)
+def test_fixed_qubit_count(testclass, subroutine_name, irclass, irsubclasses, kwargs):
+    fixed_qubit_count = testclass.fixed_qubit_count()
+    if fixed_qubit_count is not NotImplemented:
+        gate = testclass(**create_valid_gate_class_input(irsubclasses, **kwargs))
+        assert gate.qubit_count == fixed_qubit_count
+
+
 # Additional Unitary gate tests
 
 
@@ -311,12 +338,39 @@ def test_equality():
     assert u1 != non_gate
 
 
+def test_free_param_equality():
+    param1 = FreeParameter("theta")
+    param2 = FreeParameter("phi")
+    rx1 = Gate.Rx(param1)
+    rx2 = Gate.Rx(param1)
+    other_gate = Gate.Rx(param2)
+
+    assert rx1 == rx2
+    assert rx1 is not rx2
+    assert rx1 != other_gate
+    assert rx1 != param1
+
+
 def test_large_unitary():
     matrix = np.eye(16, dtype=np.float32)
     # Permute rows of matrix
     matrix[[*range(16)]] = matrix[[(i + 1) % 16 for i in range(16)]]
     unitary = Gate.Unitary(matrix)
     assert unitary.qubit_count == 4
+
+
+@pytest.mark.parametrize("gate", parameterizable_gates)
+def test_bind_values(gate):
+    theta = FreeParameter("theta")
+    param_gate = gate(theta)
+    new_gate = param_gate.bind_values(theta=1)
+    expected = gate(1)
+
+    assert (
+        type(new_gate.angle) == float
+        and type(new_gate) == type(param_gate)
+        and new_gate == expected
+    )
 
 
 @pytest.mark.xfail(raises=ValueError)

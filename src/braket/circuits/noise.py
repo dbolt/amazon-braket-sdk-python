@@ -1,4 +1,4 @@
-# Copyright 2019-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"). You
 # may not use this file except in compliance with the License. A copy of
@@ -11,7 +11,7 @@
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 
-from typing import Any, Sequence
+from typing import Any, Dict, Optional, Sequence
 
 from braket.circuits.quantum_operator import QuantumOperator
 from braket.circuits.qubit_set import QubitSet
@@ -26,14 +26,10 @@ class Noise(QuantumOperator):
     the metadata that defines what the noise channel is and what it does.
     """
 
-    def __init__(
-        self,
-        qubit_count: int,
-        ascii_symbols: Sequence[str],
-    ):
+    def __init__(self, qubit_count: Optional[int], ascii_symbols: Sequence[str]):
         """
         Args:
-            qubit_count (int): Number of qubits this noise channel interacts with.
+            qubit_count (int, optional): Number of qubits this noise channel interacts with.
             ascii_symbols (Sequence[str]): ASCII string symbols for this noise channel. These
                 are used when printing a diagram of circuits. Length must be the same as
                 `qubit_count`, and index ordering is expected to correlate with target ordering
@@ -43,17 +39,7 @@ class Noise(QuantumOperator):
             ValueError: `qubit_count` is less than 1, `ascii_symbols` are None, or
                 length of `ascii_symbols` is not equal to `qubit_count`
         """
-        if qubit_count < 1:
-            raise ValueError(f"qubit_count, {qubit_count}, must be greater than zero")
-        self._qubit_count = qubit_count
-
-        if ascii_symbols is None:
-            raise ValueError("ascii_symbols must not be None")
-
-        if len(ascii_symbols) != qubit_count:
-            msg = f"ascii_symbols, {ascii_symbols}, length must equal qubit_count, {qubit_count}"
-            raise ValueError(msg)
-        self._ascii_symbols = tuple(ascii_symbols)
+        super().__init__(qubit_count=qubit_count, ascii_symbols=ascii_symbols)
 
     @property
     def name(self) -> str:
@@ -107,11 +93,13 @@ class SingleProbabilisticNoise(Noise):
     parameterized by a single probability.
     """
 
-    def __init__(self, probability: float, qubit_count: int, ascii_symbols: Sequence[str]):
+    def __init__(
+        self, probability: float, qubit_count: Optional[int], ascii_symbols: Sequence[str]
+    ):
         """
         Args:
             probability (float): The probability that the noise occurs.
-            qubit_count (int): The number of qubits to apply noise.
+            qubit_count (int, optional): The number of qubits to apply noise.
             ascii_symbols (Sequence[str]): ASCII string symbols for the noise. These are used when
                 printing a diagram of a circuit. The length must be the same as `qubit_count`, and
                 index ordering is expected to correlate with the target ordering on the instruction.
@@ -133,7 +121,7 @@ class SingleProbabilisticNoise(Noise):
     def probability(self) -> float:
         """
         Returns:
-            probability (float): The probability that parameterizes the noise channel.
+            probability (float): The probability that parametrizes the noise channel.
         """
         return self._probability
 
@@ -147,11 +135,13 @@ class SingleProbabilisticNoise_34(Noise):
     channels parameterized by a single probability.
     """
 
-    def __init__(self, probability: float, qubit_count: int, ascii_symbols: Sequence[str]):
+    def __init__(
+        self, probability: float, qubit_count: Optional[int], ascii_symbols: Sequence[str]
+    ):
         """
         Args:
             probability (float): The probability that the noise occurs.
-            qubit_count (int): The number of qubits to apply noise.
+            qubit_count (int, optional): The number of qubits to apply noise.
             ascii_symbols (Sequence[str]): ASCII string symbols for the noise. These are used when
                 printing a diagram of a circuit. The length must be the same as `qubit_count`, and
                 index ordering is expected to correlate with the target ordering on the instruction.
@@ -173,7 +163,7 @@ class SingleProbabilisticNoise_34(Noise):
     def probability(self) -> float:
         """
         Returns:
-            probability (float): The probability that parameterizes the noise channel.
+            probability (float): The probability that parametrizes the noise channel.
         """
         return self._probability
 
@@ -187,11 +177,13 @@ class SingleProbabilisticNoise_1516(Noise):
     parameterized by a single probability.
     """
 
-    def __init__(self, probability: float, qubit_count: int, ascii_symbols: Sequence[str]):
+    def __init__(
+        self, probability: float, qubit_count: Optional[int], ascii_symbols: Sequence[str]
+    ):
         """
         Args:
             probability (float): The probability that the noise occurs.
-            qubit_count (int): The number of qubits to apply noise.
+            qubit_count (int, optional): The number of qubits to apply noise.
             ascii_symbols (Sequence[str]): ASCII string symbols for the noise. These are used when
                 printing a diagram of a circuit. The length must be the same as `qubit_count`, and
                 index ordering is expected to correlate with the target ordering on the instruction.
@@ -213,7 +205,7 @@ class SingleProbabilisticNoise_1516(Noise):
     def probability(self) -> float:
         """
         Returns:
-            probability (float): The probability that parameterizes the noise channel.
+            probability (float): The probability that parametrizes the noise channel.
         """
         return self._probability
 
@@ -221,10 +213,102 @@ class SingleProbabilisticNoise_1516(Noise):
         return f"{self.name}('probability': {self.probability}, 'qubit_count': {self.qubit_count})"
 
 
+class MultiQubitPauliNoise(Noise):
+    """
+    Class `MultiQubitPauliNoise` represents a general multi-qubit Pauli channel,
+    parameterized by up to 4**N - 1 probabilities.
+    """
+
+    _allowed_substrings = {"I", "X", "Y", "Z"}
+
+    def __init__(
+        self,
+        probabilities: Dict[str, float],
+        qubit_count: Optional[int],
+        ascii_symbols: Sequence[str],
+    ):
+        """[summary]
+
+        Args:
+            probabilities (Dict[str, float]): A dictionary with Pauli string as the keys,
+            and the probabilities as values, i.e. {"XX": 0.1. "IZ": 0.2}.
+            qubit_count (Optional[int]): The number of qubits the Pauli noise acts on.
+            ascii_symbols (Sequence[str]): ASCII string symbols for the noise. These are used when
+                printing a diagram of a circuit. The length must be the same as `qubit_count`, and
+                index ordering is expected to correlate with the target ordering on the instruction.
+
+        Raises:
+            ValueError: If the `qubit_count` is less than 1, `ascii_symbols` are `None`, or
+                `ascii_symbols` length != `qubit_count`. Also if `probabilities` are not `float`s,
+                any `probabilities` > 1, or `probabilities` < 0, or if the sum of all
+                probabilities is > 1,
+                or if "II" is specified as a Pauli string.
+                Also if any Pauli string contains invalid strings.
+                Also if the length of probabilities is greater than 4**qubit_count.
+            TypeError: If the type of the dictionary keys are not strings.
+                If the probabilities are not floats.
+        """
+
+        super().__init__(qubit_count=qubit_count, ascii_symbols=ascii_symbols)
+        self.probabilities = probabilities
+
+        if not probabilities:
+            raise ValueError("Pauli dictionary must not be empty.")
+
+        identity = self.qubit_count * "I"
+        if identity in probabilities:
+            raise ValueError(
+                f"{identity} is not allowed as a key. Please enter only non-identity Pauli strings."
+            )
+
+        for pauli_string, prob in probabilities.items():
+            if not isinstance(pauli_string, str):
+                raise TypeError(f"Type of {pauli_string} was not a string.")
+            if len(pauli_string) != self.qubit_count:
+                raise ValueError(
+                    (
+                        "Length of each Pauli string must be equal to number of qubits. "
+                        f"{pauli_string} had length {len(pauli_string)} instead of length {self.qubit_count}."  # noqa
+                    )
+                )
+            if not isinstance(prob, float):
+                raise TypeError(
+                    (
+                        "Probabilities must be a float type. "
+                        f"The probability for {pauli_string} was of type {type(prob)}."
+                    )
+                )
+            if not set(pauli_string) <= self._allowed_substrings:
+                raise ValueError(
+                    (
+                        "Strings must be Pauli strings consisting of only [I, X, Y, Z]. "
+                        f"Received {pauli_string}."
+                    )
+                )
+            if prob < 0.0 or prob > 1.0:
+                raise ValueError(
+                    (
+                        "Individual probabilities must be real numbers in the interval [0, 1]. "
+                        f"Probability for {pauli_string} was {prob}."
+                    )
+                )
+        total_prob = sum(probabilities.values())
+        if total_prob > 1.0 or total_prob < 0.0:
+            raise ValueError(
+                (
+                    "Total probability must be a real number in the interval [0, 1]. "
+                    f"Total probability was {total_prob}."
+                )
+            )
+
+    def __repr__(self):
+        return f"{self.name}('probabilities' : {self.probabilities}, 'qubit_count': {self.qubit_count})"  # noqa
+
+
 class PauliNoise(Noise):
     """
-    Class `PauliNoise` represents the general Pauli noise channel on N qubits
-    parameterized by three probabilities.
+    Class `PauliNoise` represents the a single-qubit Pauli noise channel
+    acting on one qubit. It is parameterized by three probabilities.
     """
 
     def __init__(
@@ -232,14 +316,14 @@ class PauliNoise(Noise):
         probX: float,
         probY: float,
         probZ: float,
-        qubit_count: int,
+        qubit_count: Optional[int],
         ascii_symbols: Sequence[str],
     ):
         """
         Args:
             probX [float], probY [float], probZ [float]: The coefficients of the Kraus operators
                 in the channel.
-            qubit_count (int): The number of qubits to apply noise.
+            qubit_count (int, optional): The number of qubits to apply noise.
             ascii_symbols (Sequence[str]): ASCII string symbols for the noise. These are used when
                 printing a diagram of a circuit. The length must be the same as `qubit_count`, and
                 index ordering is expected to correlate with the target ordering on the instruction.
@@ -306,11 +390,11 @@ class DampingNoise(Noise):
     on N qubits parameterized by gamma.
     """
 
-    def __init__(self, gamma: float, qubit_count: int, ascii_symbols: Sequence[str]):
+    def __init__(self, gamma: float, qubit_count: Optional[int], ascii_symbols: Sequence[str]):
         """
         Args:
             gamma (float): Probability of damping.
-            qubit_count (int): The number of qubits to apply noise.
+            qubit_count (int, optional): The number of qubits to apply noise.
             ascii_symbols (Sequence[str]): ASCII string symbols for the noise. These are used when
                 printing a diagram of a circuit. The length must be the same as `qubit_count`, and
                 index ordering is expected to correlate with the target ordering on the instruction.
@@ -347,7 +431,11 @@ class GeneralizedAmplitudeDampingNoise(DampingNoise):
     """
 
     def __init__(
-        self, gamma: float, probability: float, qubit_count: int, ascii_symbols: Sequence[str]
+        self,
+        gamma: float,
+        probability: float,
+        qubit_count: Optional[int],
+        ascii_symbols: Sequence[str],
     ):
         """
         Args:
