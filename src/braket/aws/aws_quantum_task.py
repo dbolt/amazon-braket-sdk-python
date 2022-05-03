@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from enum import Enum
 from functools import singledispatch
 from logging import Logger, getLogger
 from typing import Any, Dict, Union
@@ -47,6 +48,11 @@ from braket.task_result import AnnealingTaskResult, GateModelTaskResult
 from braket.tasks import AnnealingQuantumTaskResult, GateModelQuantumTaskResult, QuantumTask
 
 
+class GetType(str, Enum):
+    DEFAULT = "DEFAULT"
+    LONG_POLL = "LONG_POLL"
+
+
 class AwsQuantumTask(QuantumTask):
     """Amazon Braket implementation of a quantum task. A task can be a circuit or an annealing
     problem."""
@@ -67,7 +73,7 @@ class AwsQuantumTask(QuantumTask):
         task_specification: Union[Circuit, Problem, OpenQasmProgram],
         s3_destination_folder: AwsSession.S3DestinationFolder,
         shots: int,
-        get_result: bool,
+        get_type: GetType,
         device_parameters: Dict[str, Any] = None,
         disable_qubit_rewiring: bool = False,
         tags: Dict[str, str] = None,
@@ -146,7 +152,7 @@ class AwsQuantumTask(QuantumTask):
             aws_session,
             create_task_kwargs,
             device_arn,
-            get_result,
+            get_type,
             device_parameters or {},
             disable_qubit_rewiring,
             *args,
@@ -157,7 +163,7 @@ class AwsQuantumTask(QuantumTask):
         self,
         arn: str,
         aws_session: AwsSession = None,
-        get_result: bool = True,
+        get_type: GetType = GetType.DEFAULT,
         poll_timeout_seconds: float = DEFAULT_RESULTS_POLL_TIMEOUT,
         poll_interval_seconds: float = DEFAULT_RESULTS_POLL_INTERVAL,
         logger: Logger = getLogger(__name__),
@@ -189,7 +195,7 @@ class AwsQuantumTask(QuantumTask):
         self._aws_session: AwsSession = aws_session or AwsQuantumTask._aws_session_for_task_arn(
             task_arn=arn
         )
-        self._get_result = get_result
+        self._get_type = get_type
         self._poll_timeout_seconds = poll_timeout_seconds
         self._poll_interval_seconds = poll_interval_seconds
 
@@ -244,7 +250,10 @@ class AwsQuantumTask(QuantumTask):
             it wil still be called to populate the metadata for the first time.
         """
         if not use_cached_value or not self._metadata:
-            self._metadata = self._aws_session.get_quantum_task(self._arn)
+            if self._get_type == GetType.LONG_POLL:
+                self._metadata = self._aws_session.get_quantum_task_v3(self._arn)
+            else:
+                self._metadata = self._aws_session.get_quantum_task(self._arn)
         return self._metadata
 
     def state(self, use_cached_value: bool = False) -> str:
@@ -388,15 +397,8 @@ class AwsQuantumTask(QuantumTask):
         return None
 
     def _download_result(self):
-        current_metadata = self.metadata(True)
-        if self._get_result:
-            result_string = self._aws_session.retrieve_s3_object_body(
-                current_metadata["outputS3Bucket"],
-                current_metadata["outputS3Directory"] + f"/{AwsQuantumTask.RESULTS_FILENAME}",
-            )
-            self._result = _format_result(BraketSchemaBase.parse_raw_schema(result_string))
-        else:
-            self._result = "THERE IS NO RESULT. PLACING A VALUE SO THE LOGIC DOESN'T LOOP"
+        result_string = self._aws_session.get_quantum_task_result(self._arn)
+        self._result = _format_result(BraketSchemaBase.parse_raw_schema(result_string))
 
         return self._result
 
@@ -418,7 +420,7 @@ def _create_internal(
     aws_session: AwsSession,
     create_task_kwargs: Dict[str, Any],
     device_arn: str,
-    get_result: bool,
+    get_type: GetType,
     device_parameters: Union[dict, BraketSchemaBase],
     disable_qubit_rewiring,
     *args,
@@ -433,7 +435,7 @@ def _(
     aws_session: AwsSession,
     create_task_kwargs: Dict[str, Any],
     device_arn: str,
-    get_result: bool,
+    get_type: GetType,
     _device_parameters: Union[dict, BraketSchemaBase],  # Not currently used for OpenQasmProgram
     _disable_qubit_rewiring,
     *args,
@@ -441,7 +443,7 @@ def _(
 ) -> AwsQuantumTask:
     create_task_kwargs.update({"action": open_qasm_program.json()})
     task_arn = aws_session.create_quantum_task(**create_task_kwargs)
-    return AwsQuantumTask(task_arn, aws_session, get_result, *args, **kwargs)
+    return AwsQuantumTask(task_arn, aws_session, get_type, *args, **kwargs)
 
 
 @_create_internal.register
@@ -450,7 +452,7 @@ def _(
     aws_session: AwsSession,
     create_task_kwargs: Dict[str, Any],
     device_arn: str,
-    get_result: bool,
+    get_type: GetType,
     device_parameters: Union[dict, BraketSchemaBase],  # Not currently used for circuits
     disable_qubit_rewiring,
     *args,
@@ -482,7 +484,7 @@ def _(
         {"action": circuit.to_ir().json(), "deviceParameters": device_parameters.json()}
     )
     task_arn = aws_session.create_quantum_task(**create_task_kwargs)
-    return AwsQuantumTask(task_arn, aws_session, get_result, *args, **kwargs)
+    return AwsQuantumTask(task_arn, aws_session, get_type, *args, **kwargs)
 
 
 @_create_internal.register
@@ -491,7 +493,7 @@ def _(
     aws_session: AwsSession,
     create_task_kwargs: Dict[str, Any],
     device_arn: str,
-    get_result: bool,
+    get_type: bool,
     device_parameters: Union[
         dict,
         DwaveDeviceParameters,
@@ -511,7 +513,7 @@ def _(
     )
 
     task_arn = aws_session.create_quantum_task(**create_task_kwargs)
-    return AwsQuantumTask(task_arn, aws_session, get_result, *args, **kwargs)
+    return AwsQuantumTask(task_arn, aws_session, get_type, *args, **kwargs)
 
 
 def _create_annealing_device_params(device_params, device_arn):

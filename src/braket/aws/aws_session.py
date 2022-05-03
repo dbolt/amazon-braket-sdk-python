@@ -160,7 +160,7 @@ class AwsSession(object):
         job_token = os.getenv("AMZN_BRAKET_JOB_TOKEN")
         if job_token:
             boto3_kwargs.update({"jobToken": job_token})
-        response = self.braket_client.create_quantum_task(**boto3_kwargs)
+        response = self.braket_client.create_quantum_task_v2(**boto3_kwargs)
         return response["quantumTaskArn"]
 
     def create_job(self, **boto3_kwargs) -> str:
@@ -204,7 +204,20 @@ class AwsSession(object):
         Returns:
             Dict[str, Any]: The response from the Amazon Braket `GetQuantumTask` operation.
         """
-        return self.braket_client.get_quantum_task(quantumTaskArn=arn)
+        return self.braket_client.get_quantum_task_v3(quantumTaskArn=arn)
+
+    @backoff.on_exception(
+        backoff.expo,
+        ClientError,
+        max_tries=3,
+        jitter=backoff.full_jitter,
+        giveup=_should_giveup.__func__,
+    )
+    def get_quantum_task_v3(self, arn: str) -> Dict[str, Any]:
+        return self.braket_client.get_quantum_task_v3(quantumTaskArn=arn)
+
+    def get_quantum_task_result(self, arn: str) -> str:
+        return self.braket_client.get_quantum_task_result(quantumTaskArn=arn)["content"].read()
 
     def get_default_jobs_role(self) -> str:
         """

@@ -281,9 +281,9 @@ class AwsDevice(Device):
         self._status = metadata.get("deviceStatus")
         self._type = AwsDeviceType(metadata.get("deviceType"))
         self._provider_name = metadata.get("providerName")
-        qpu_properties = metadata.get("deviceCapabilities")
-        self._properties = BraketSchemaBase.parse_raw_schema(qpu_properties)
-        self._topology_graph = self._construct_topology_graph()
+        # qpu_properties = metadata.get("deviceCapabilities")
+        # self._properties = BraketSchemaBase.parse_raw_schema(qpu_properties)
+        # self._topology_graph = self._construct_topology_graph()
 
     @property
     def type(self) -> str:
