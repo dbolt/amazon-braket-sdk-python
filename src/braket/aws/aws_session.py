@@ -204,7 +204,7 @@ class AwsSession(object):
         Returns:
             Dict[str, Any]: The response from the Amazon Braket `GetQuantumTask` operation.
         """
-        return self.braket_client.get_quantum_task_v3(quantumTaskArn=arn)
+        return self.braket_client.get_quantum_task_v2(quantumTaskArn=arn)
 
     @backoff.on_exception(
         backoff.expo,
