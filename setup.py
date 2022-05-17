@@ -36,6 +36,7 @@ setup(
         "networkx",
         "numpy",
         "sympy",
+        "aws-xray-sdk"
     ],
     extras_require={
         "test": [

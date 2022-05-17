@@ -22,6 +22,7 @@ from typing import Any, Dict, List, NamedTuple, Optional
 
 import backoff
 import boto3
+from aws_xray_sdk.core import xray_recorder
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
@@ -216,6 +217,7 @@ class AwsSession(object):
     def get_quantum_task_v3(self, arn: str) -> Dict[str, Any]:
         return self.braket_client.get_quantum_task_v3(quantumTaskArn=arn)
 
+    @xray_recorder.capture("get_quantum_task_result")
     def get_quantum_task_result(self, arn: str) -> str:
         return self.braket_client.get_quantum_task_result(quantumTaskArn=arn)["content"].read()
 

@@ -21,6 +21,7 @@ from logging import Logger, getLogger
 from typing import Any, Dict, Union
 
 import boto3
+from aws_xray_sdk.core import xray_recorder
 
 from braket.annealing.problem import Problem
 from braket.aws.aws_session import AwsSession
@@ -396,9 +397,14 @@ class AwsQuantumTask(QuantumTask):
         self._result = None
         return None
 
+    @xray_recorder.capture("aws_quantum_task._download_result")
     def _download_result(self):
         result_string = self._aws_session.get_quantum_task_result(self._arn)
-        self._result = _format_result(BraketSchemaBase.parse_raw_schema(result_string))
+        with xray_recorder.capture("_download_result.parse_raw_schema") as subsegment:
+            parsed_result = BraketSchemaBase.parse_raw_schema(result_string)
+
+        with xray_recorder.capture("_download_result._format_result") as subsegment:
+            self._result = _format_result(parsed_result)
 
         return self._result
 
