@@ -46,6 +46,7 @@ class AwsQuantumTaskBatch:
         s3_destination_folder: AwsSession.S3DestinationFolder,
         shots: int,
         get_type: GetType,
+        batch_size: int,
         max_parallel: int,
         max_workers: int = MAX_CONNECTIONS_DEFAULT,
         poll_timeout_seconds: float = AwsQuantumTask.DEFAULT_RESULTS_POLL_TIMEOUT,
@@ -87,6 +88,7 @@ class AwsQuantumTaskBatch:
             s3_destination_folder,
             shots,
             get_type,
+            batch_size,
             max_parallel,
             max_workers,
             poll_timeout_seconds,
@@ -104,6 +106,7 @@ class AwsQuantumTaskBatch:
         self._s3_destination_folder = s3_destination_folder
         self._shots = shots
         self._get_type = get_type
+        self._batch_size = batch_size
         self._max_parallel = max_parallel
         self._max_workers = max_workers
         self._poll_timeout_seconds = poll_timeout_seconds
@@ -119,6 +122,7 @@ class AwsQuantumTaskBatch:
         s3_destination_folder,
         shots,
         get_type,
+        batch_size,
         max_parallel,
         max_workers,
         poll_timeout_seconds,
@@ -145,6 +149,7 @@ class AwsQuantumTaskBatch:
                     s3_destination_folder,
                     shots,
                     get_type,
+                    batch_size,
                     poll_timeout_seconds=poll_timeout_seconds,
                     poll_interval_seconds=poll_interval_seconds,
                     *args,
@@ -164,6 +169,7 @@ class AwsQuantumTaskBatch:
         s3_destination_folder,
         shots,
         get_type,
+        batch_size,
         poll_interval_seconds,
         *args,
         **kwargs,
@@ -175,6 +181,7 @@ class AwsQuantumTaskBatch:
             s3_destination_folder,
             shots,
             get_type,
+            batch_size,
             poll_interval_seconds=poll_interval_seconds,
             *args,
             **kwargs,
@@ -256,6 +263,7 @@ class AwsQuantumTaskBatch:
             self._s3_destination_folder,
             self._shots,
             self._get_type,
+            self._batch_size,
             self._max_parallel,
             self._max_workers,
             self._poll_timeout_seconds,

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+import json
 from enum import Enum
 from functools import singledispatch
 from logging import Logger, getLogger
@@ -75,6 +76,7 @@ class AwsQuantumTask(QuantumTask):
         s3_destination_folder: AwsSession.S3DestinationFolder,
         shots: int,
         get_type: GetType,
+        batch_size: int,
         device_parameters: Dict[str, Any] = None,
         disable_qubit_rewiring: bool = False,
         tags: Dict[str, str] = None,
@@ -141,6 +143,7 @@ class AwsQuantumTask(QuantumTask):
             s3_destination_folder,
             shots if shots is not None else AwsQuantumTask.DEFAULT_SHOTS,
         )
+        create_task_kwargs["batchSize"] = batch_size
         if tags is not None:
             create_task_kwargs.update({"tags": tags})
         if isinstance(task_specification, Circuit) and task_specification.parameters:
@@ -154,6 +157,7 @@ class AwsQuantumTask(QuantumTask):
             create_task_kwargs,
             device_arn,
             get_type,
+            batch_size,
             device_parameters or {},
             disable_qubit_rewiring,
             *args,
@@ -165,6 +169,7 @@ class AwsQuantumTask(QuantumTask):
         arn: str,
         aws_session: AwsSession = None,
         get_type: GetType = GetType.DEFAULT,
+        batch_size: int = 1,
         poll_timeout_seconds: float = DEFAULT_RESULTS_POLL_TIMEOUT,
         poll_interval_seconds: float = DEFAULT_RESULTS_POLL_INTERVAL,
         logger: Logger = getLogger(__name__),
@@ -197,6 +202,7 @@ class AwsQuantumTask(QuantumTask):
             task_arn=arn
         )
         self._get_type = get_type
+        self._batch_size = batch_size
         self._poll_timeout_seconds = poll_timeout_seconds
         self._poll_interval_seconds = poll_interval_seconds
 
@@ -399,12 +405,22 @@ class AwsQuantumTask(QuantumTask):
 
     @xray_recorder.capture("aws_quantum_task._download_result")
     def _download_result(self):
-        result_string = self._aws_session.get_quantum_task_result(self._arn)
-        with xray_recorder.capture("_download_result.parse_raw_schema") as subsegment:
-            parsed_result = BraketSchemaBase.parse_raw_schema(result_string)
 
-        with xray_recorder.capture("_download_result._format_result") as subsegment:
-            self._result = _format_result(parsed_result)
+        def _get_result(result_string):
+            with xray_recorder.capture("_download_result.parse_raw_schema"):
+                parsed_result = BraketSchemaBase.parse_raw_schema(result_string)
+
+            with xray_recorder.capture("_download_result._format_result"):
+                return _format_result(parsed_result)
+
+        result_string = self._aws_session.get_quantum_task_result(self._arn)
+
+        if self._batch_size > 1:
+            result_json = json.loads(result_string)
+            results = [_get_result(sub_result_str) for sub_result_str in result_json["results"]]
+            self._result = results
+        else:
+            self._result = _get_result(result_string)
 
         return self._result
 
@@ -427,6 +443,7 @@ def _create_internal(
     create_task_kwargs: Dict[str, Any],
     device_arn: str,
     get_type: GetType,
+    batch_size: int,
     device_parameters: Union[dict, BraketSchemaBase],
     disable_qubit_rewiring,
     *args,
@@ -442,6 +459,7 @@ def _(
     create_task_kwargs: Dict[str, Any],
     device_arn: str,
     get_type: GetType,
+    batch_size: int,
     _device_parameters: Union[dict, BraketSchemaBase],  # Not currently used for OpenQasmProgram
     _disable_qubit_rewiring,
     *args,
@@ -449,7 +467,7 @@ def _(
 ) -> AwsQuantumTask:
     create_task_kwargs.update({"action": open_qasm_program.json()})
     task_arn = aws_session.create_quantum_task(**create_task_kwargs)
-    return AwsQuantumTask(task_arn, aws_session, get_type, *args, **kwargs)
+    return AwsQuantumTask(task_arn, aws_session, get_type, batch_size, *args, **kwargs)
 
 
 @_create_internal.register
@@ -459,6 +477,7 @@ def _(
     create_task_kwargs: Dict[str, Any],
     device_arn: str,
     get_type: GetType,
+    batch_size: int,
     device_parameters: Union[dict, BraketSchemaBase],  # Not currently used for circuits
     disable_qubit_rewiring,
     *args,
@@ -490,7 +509,7 @@ def _(
         {"action": circuit.to_ir().json(), "deviceParameters": device_parameters.json()}
     )
     task_arn = aws_session.create_quantum_task(**create_task_kwargs)
-    return AwsQuantumTask(task_arn, aws_session, get_type, *args, **kwargs)
+    return AwsQuantumTask(task_arn, aws_session, get_type, batch_size, *args, **kwargs)
 
 
 @_create_internal.register
@@ -499,7 +518,8 @@ def _(
     aws_session: AwsSession,
     create_task_kwargs: Dict[str, Any],
     device_arn: str,
-    get_type: bool,
+    get_type: GetType,
+    batch_size: int,
     device_parameters: Union[
         dict,
         DwaveDeviceParameters,
@@ -519,7 +539,7 @@ def _(
     )
 
     task_arn = aws_session.create_quantum_task(**create_task_kwargs)
-    return AwsQuantumTask(task_arn, aws_session, get_type, *args, **kwargs)
+    return AwsQuantumTask(task_arn, aws_session, get_type, batch_size, *args, **kwargs)
 
 
 def _create_annealing_device_params(device_params, device_arn):
