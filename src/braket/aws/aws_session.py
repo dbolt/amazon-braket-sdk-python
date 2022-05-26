@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+from enum import Enum
 import itertools
 import os
 import os.path
@@ -28,6 +29,11 @@ from botocore.exceptions import ClientError
 
 import braket._schemas as braket_schemas
 import braket._sdk as braket_sdk
+
+
+class GetType(str, Enum):
+    DEFAULT = "DEFAULT"
+    LONG_POLL = "LONG_POLL"
 
 
 class AwsSession(object):
@@ -195,7 +201,7 @@ class AwsSession(object):
         jitter=backoff.full_jitter,
         giveup=_should_giveup.__func__,
     )
-    def get_quantum_task(self, arn: str) -> Dict[str, Any]:
+    def get_quantum_task(self, arn: str, **kwargs) -> Dict[str, Any]:
         """
         Gets the quantum task.
 
@@ -205,17 +211,12 @@ class AwsSession(object):
         Returns:
             Dict[str, Any]: The response from the Amazon Braket `GetQuantumTask` operation.
         """
-        return self.braket_client.get_quantum_task_v2(quantumTaskArn=arn)
+        get_type = kwargs.get("get_type", GetType.DEFAULT)
 
-    @backoff.on_exception(
-        backoff.expo,
-        ClientError,
-        max_tries=3,
-        jitter=backoff.full_jitter,
-        giveup=_should_giveup.__func__,
-    )
-    def get_quantum_task_v3(self, arn: str) -> Dict[str, Any]:
-        return self.braket_client.get_quantum_task_v3(quantumTaskArn=arn)
+        if get_type == GetType.DEFAULT:
+            return self.braket_client.get_quantum_task_v2(quantumTaskArn=arn)
+        else:
+            return self.braket_client.get_quantum_task_v3(quantumTaskArn=arn)
 
     @xray_recorder.capture("get_quantum_task_result")
     def get_quantum_task_result(self, arn: str) -> str:
