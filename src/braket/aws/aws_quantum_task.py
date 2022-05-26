@@ -197,6 +197,7 @@ class AwsQuantumTask(QuantumTask):
 
         self._logger = logger
         self._batch_size = kwargs.get("batch_size", 1)
+        self._get_type = kwargs.get("get_type")
         self._metadata: Dict[str, Any] = {}
         self._result: Union[GateModelQuantumTaskResult, AnnealingQuantumTaskResult] = None
 
@@ -246,7 +247,7 @@ class AwsQuantumTask(QuantumTask):
             it wil still be called to populate the metadata for the first time.
         """
         if not use_cached_value or not self._metadata:
-            self._metadata = self._aws_session.get_quantum_task(self._arn)
+            self._metadata = self._aws_session.get_quantum_task(self._arn, get_type=self._get_type)
         return self._metadata
 
     def state(self, use_cached_value: bool = False) -> str:

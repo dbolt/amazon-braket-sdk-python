@@ -212,7 +212,6 @@ class AwsSession(object):
             Dict[str, Any]: The response from the Amazon Braket `GetQuantumTask` operation.
         """
         get_type = kwargs.get("get_type", GetType.DEFAULT)
-
         if get_type == GetType.DEFAULT:
             return self.braket_client.get_quantum_task_v2(quantumTaskArn=arn)
         else:
