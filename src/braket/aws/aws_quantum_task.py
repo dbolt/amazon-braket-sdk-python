@@ -14,12 +14,14 @@
 from __future__ import annotations
 
 import asyncio
-import time
 import json
+import time
 from functools import singledispatch
+from io import BytesIO
 from logging import Logger, getLogger
 from typing import Any, Dict, Union
 
+import amazon.ion.simpleion as ion
 import boto3
 from aws_xray_sdk.core import xray_recorder
 
@@ -196,8 +198,9 @@ class AwsQuantumTask(QuantumTask):
         self._poll_interval_seconds = poll_interval_seconds
 
         self._logger = logger
-        self._batch_size = kwargs.get("batch_size", 1)
         self._get_type = kwargs.get("get_type")
+        self._batch_size = kwargs.get("batch_size", 1)
+        self._result_format = kwargs.get("result_format", "JSON")
         self._metadata: Dict[str, Any] = {}
         self._result: Union[GateModelQuantumTaskResult, AnnealingQuantumTaskResult] = None
 
@@ -393,21 +396,24 @@ class AwsQuantumTask(QuantumTask):
     @xray_recorder.capture("aws_quantum_task._download_result")
     def _download_result(self):
 
-        def _get_result(result_string):
+        def _get_result_from_json(result_string):
             with xray_recorder.capture("_download_result.parse_raw_schema"):
                 parsed_result = BraketSchemaBase.parse_raw_schema(result_string)
 
             with xray_recorder.capture("_download_result._format_result"):
                 return _format_result(parsed_result)
 
-        result_string = self._aws_session.get_quantum_task_result(self._arn)
-
-        if self._batch_size > 1:
-            result_json = json.loads(result_string)
-            results = [_get_result(sub_result_str) for sub_result_str in result_json["results"]]
-            self._result = results
+        result_data = self._aws_session.get_quantum_task_result(self._arn)
+        if self._result_format == "JSON":
+            if self._batch_size > 1:
+                result_json = json.loads(result_data)
+                results = [_get_result_from_json(sub_result_str) for sub_result_str in result_json["results"]]
+                self._result = results
+            else:
+                self._result = _get_result_from_json(result_data)
         else:
-            self._result = _get_result(result_string)
+            with xray_recorder.capture("_download_result._ion_format_result"):
+                self._result = _format_result(result_data)
 
         return self._result
 
@@ -563,7 +569,13 @@ def _create_common_params(
 
 @singledispatch
 def _format_result(result):
+    print(type(result))
     raise TypeError("Invalid result specification type")
+
+
+@_format_result.register
+def _(result: bytes) -> GateModelQuantumTaskResult:
+    return ion.loads(result)
 
 
 @_format_result.register
