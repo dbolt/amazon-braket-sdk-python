@@ -566,16 +566,16 @@ def _format_result(result):
     raise TypeError("Invalid result specification type")
 
 
-@xray_recorder.capture("ion_binary_loads")
 @_format_result.register
 def _(result: bytes):
-    return ion.loads(result)
+    with xray_recorder.capture("ion_binary_loads"):
+        return ion.loads(result)
 
 
-@xray_recorder.capture("json_loads")
 @_format_result.register
 def _(result: str):
-    return json.loads(result)
+    with xray_recorder.capture("json_loads"):
+        return json.loads(result)
 
 
 @_format_result.register
