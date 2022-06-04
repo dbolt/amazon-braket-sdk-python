@@ -405,10 +405,12 @@ class AwsQuantumTask(QuantumTask):
             result_json = json.loads(result_data)
             results = [_format_result(sub_result_str) for sub_result_str in result_json["results"]]
             self._result = results
+        elif self._result_format == "JSON":
+            with xray_recorder.capture("json_loads"):
+                self._result = json.loads(result_data)
         else:
-            self._result = _format_result(result_data)
-
-        return self._result
+            with xray_recorder.capture("ion_binary_loads"):
+                self._result = ion.loads(result_data)
 
     def __repr__(self) -> str:
         return f"AwsQuantumTask('id/taskArn':'{self.id}')"
@@ -564,18 +566,6 @@ def _create_common_params(
 def _format_result(result):
     print(type(result))
     raise TypeError("Invalid result specification type")
-
-
-@_format_result.register
-def _(result: bytes):
-    with xray_recorder.capture("ion_binary_loads"):
-        return ion.loads(result)
-
-
-@_format_result.register
-def _(result: str):
-    with xray_recorder.capture("json_loads"):
-        return json.loads(result)
 
 
 @_format_result.register
