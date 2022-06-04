@@ -396,24 +396,17 @@ class AwsQuantumTask(QuantumTask):
     @xray_recorder.capture("aws_quantum_task._download_result")
     def _download_result(self):
 
-        def _get_result_from_json(result_string):
-            with xray_recorder.capture("_download_result.parse_raw_schema"):
-                parsed_result = BraketSchemaBase.parse_raw_schema(result_string)
-
-            with xray_recorder.capture("_download_result._format_result"):
-                return _format_result(parsed_result)
-
         result_data = self._aws_session.get_quantum_task_result(self._arn)
-        if self._result_format == "JSON":
-            if self._batch_size > 1:
-                result_json = json.loads(result_data)
-                results = [_get_result_from_json(sub_result_str) for sub_result_str in result_json["results"]]
-                self._result = results
-            else:
-                self._result = _get_result_from_json(result_data)
+
+        # with xray_recorder.capture("_download_result.parse_raw_schema"):
+        #     parsed_result = BraketSchemaBase.parse_raw_schema(result_string)
+
+        if self._batch_size > 1:
+            result_json = json.loads(result_data)
+            results = [_format_result(sub_result_str) for sub_result_str in result_json["results"]]
+            self._result = results
         else:
-            with xray_recorder.capture("_download_result._ion_format_result"):
-                self._result = _format_result(result_data)
+            self._result = _format_result(result_data)
 
         return self._result
 
@@ -573,9 +566,16 @@ def _format_result(result):
     raise TypeError("Invalid result specification type")
 
 
+@xray_recorder.capture("ion_binary_loads")
 @_format_result.register
-def _(result: bytes) -> GateModelQuantumTaskResult:
+def _(result: bytes):
     return ion.loads(result)
+
+
+@xray_recorder.capture("json_loads")
+@_format_result.register
+def _(result: str):
+    return json.loads(result)
 
 
 @_format_result.register
