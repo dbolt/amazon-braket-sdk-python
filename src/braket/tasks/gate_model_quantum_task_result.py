@@ -21,13 +21,14 @@ import numpy as np
 
 from braket.circuits import Observable, ResultType, StandardObservable
 from braket.circuits.observables import TensorProduct, observable_from_ir
-from braket.ir.jaqcd import Expectation, Probability, Sample, Variance
+from braket.ir.jaqcd import Expectation, Probability, Sample, Variance, Program
 from braket.task_result import (
     AdditionalMetadata,
     GateModelTaskResult,
     ResultTypeValue,
     TaskMetadata,
 )
+from aws_xray_sdk.core import xray_recorder
 
 T = TypeVar("T")
 
@@ -245,9 +246,37 @@ class GateModelQuantumTaskResult:
             return GateModelQuantumTaskResult._from_dict_internal_simulator_only(result)
 
     @classmethod
+    @xray_recorder.capture("gate_model_task_result._from_measurements")
+    def from_measurements(cls, task, measurements):
+        measurements = np.asarray(measurements, dtype=int)
+        m_counts = GateModelQuantumTaskResult.measurement_counts_from_measurements(measurements)
+        measurement_probabilities = (
+            GateModelQuantumTaskResult.measurement_probabilities_from_measurement_counts(m_counts)
+        )
+
+        return cls(
+            task_metadata=TaskMetadata(
+                id=task["quantumTaskArn"], deviceId=task["deviceArn"], shots=task["shots"]
+            ),
+            additional_metadata=AdditionalMetadata(action=Program(instructions=[])),
+            result_types=[],
+            values=[],
+            measurements=np.asarray(measurements, dtype=int),
+            measured_qubits=[],
+            measurement_counts=m_counts,
+            measurement_probabilities=measurement_probabilities,
+            measurements_copied_from_device=True,
+            measurement_counts_copied_from_device=False,
+            measurement_probabilities_copied_from_device=False,
+        )
+
+    @classmethod
     def _from_object_internal_computational_basis_sampling(cls, result: GateModelTaskResult):
         task_metadata = result.taskMetadata
+        print(task_metadata.json())
         additional_metadata = result.additionalMetadata
+        print(additional_metadata.json())
+        print(result.measuredQubits)
         if result.measurements:
             measurements = np.asarray(result.measurements, dtype=int)
             m_counts = GateModelQuantumTaskResult.measurement_counts_from_measurements(measurements)
@@ -428,7 +457,7 @@ class GateModelQuantumTaskResult:
 
         # count the basis state occurrences, and construct the probability vector
         basis_states, counts = np.unique(indices, return_counts=True)
-        probabilities = np.zeros([2**num_measured_qubits], dtype=np.float64)
+        probabilities = np.zeros([2 ** num_measured_qubits], dtype=np.float64)
         probabilities[basis_states] = counts / shots
         return probabilities
 

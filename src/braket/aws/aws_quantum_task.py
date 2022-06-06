@@ -397,20 +397,32 @@ class AwsQuantumTask(QuantumTask):
     def _download_result(self):
 
         result_data = self._aws_session.get_quantum_task_result(self._arn)
+        task_data = self.metadata(True)
 
-        # with xray_recorder.capture("_download_result.parse_raw_schema"):
-        #     parsed_result = BraketSchemaBase.parse_raw_schema(result_string)
+        def _load_json_default(result_string):
+            with xray_recorder.capture("_load_json_default.parse_raw_schema"):
+                parsed_result = BraketSchemaBase.parse_raw_schema(result_string)
+            with xray_recorder.capture("_load_json_default.parse_raw_schema"):
+                return _format_result(parsed_result)
 
         if self._batch_size > 1:
             result_json = json.loads(result_data)
-            results = [_format_result(sub_result_str) for sub_result_str in result_json["results"]]
+            results = [
+                _load_json_default(sub_result_str) for sub_result_str in result_json["results"]
+            ]
             self._result = results
-        elif self._result_format == "JSON":
+        elif self._result_format == "JSON_DEFAULT":
+            self._result = _load_json_default(result_data)
+        elif self._result_format == "JSON_MINIMAL":
             with xray_recorder.capture("json_loads"):
-                self._result = json.loads(result_data)
+                measurements = json.loads(result_data)
+                self._result = GateModelQuantumTaskResult.from_measurements(task_data, measurements)
         else:
             with xray_recorder.capture("ion_binary_loads"):
-                self._result = ion.loads(result_data)
+                measurements = ion.loads(result_data)
+                self._result = GateModelQuantumTaskResult.from_measurements(task_data, measurements)
+
+        return self._result
 
     def __repr__(self) -> str:
         return f"AwsQuantumTask('id/taskArn':'{self.id}')"
