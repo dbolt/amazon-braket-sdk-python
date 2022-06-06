@@ -273,10 +273,7 @@ class GateModelQuantumTaskResult:
     @classmethod
     def _from_object_internal_computational_basis_sampling(cls, result: GateModelTaskResult):
         task_metadata = result.taskMetadata
-        print(task_metadata.json())
         additional_metadata = result.additionalMetadata
-        print(additional_metadata.json())
-        print(result.measuredQubits)
         if result.measurements:
             measurements = np.asarray(result.measurements, dtype=int)
             m_counts = GateModelQuantumTaskResult.measurement_counts_from_measurements(measurements)
