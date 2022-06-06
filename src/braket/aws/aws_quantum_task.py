@@ -402,7 +402,7 @@ class AwsQuantumTask(QuantumTask):
         def _load_json_default(result_string):
             with xray_recorder.capture("_load_json_default.parse_raw_schema"):
                 parsed_result = BraketSchemaBase.parse_raw_schema(result_string)
-            with xray_recorder.capture("_load_json_default.parse_raw_schema"):
+            with xray_recorder.capture("_load_json_default._format_result"):
                 return _format_result(parsed_result)
 
         if self._batch_size > 1:
