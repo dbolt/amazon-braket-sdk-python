@@ -49,6 +49,7 @@ from braket.ir.openqasm import Program as OpenQasmProgram
 from braket.schema_common import BraketSchemaBase
 from braket.task_result import AnnealingTaskResult, GateModelTaskResult
 from braket.tasks import AnnealingQuantumTaskResult, GateModelQuantumTaskResult, QuantumTask
+import braket.tasks.proto.results_pb2 as results_pb2
 
 
 class AwsQuantumTask(QuantumTask):
@@ -417,9 +418,17 @@ class AwsQuantumTask(QuantumTask):
             with xray_recorder.capture("json_loads"):
                 measurements = json.loads(result_data)
                 self._result = GateModelQuantumTaskResult.from_measurements(task_data, measurements)
-        else:
+        elif self._result_format == "ION_BINARY":
             with xray_recorder.capture("ion_binary_loads"):
                 measurements = ion.loads(result_data)
+                self._result = GateModelQuantumTaskResult.from_measurements(task_data, measurements)
+        else:
+            with xray_recorder.capture("protobuf_loads"):
+                results_pb = results_pb2.Results()
+                results_pb.ParseFromString(result_data)
+                measurements = []
+                for measurement in results_pb.measurements:
+                    measurements.append([_ for _ in measurement.bits])
                 self._result = GateModelQuantumTaskResult.from_measurements(task_data, measurements)
 
         return self._result
