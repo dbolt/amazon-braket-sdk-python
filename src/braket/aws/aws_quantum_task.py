@@ -422,7 +422,7 @@ class AwsQuantumTask(QuantumTask):
             with xray_recorder.capture("ion_binary_loads"):
                 measurements = ion.loads(result_data)
                 self._result = GateModelQuantumTaskResult.from_measurements(task_data, measurements)
-        else:
+        elif self._result_format == "PROTOBUF":
             with xray_recorder.capture("protobuf_loads"):
                 results_pb = results_pb2.Results()
                 results_pb.ParseFromString(result_data)
@@ -430,6 +430,8 @@ class AwsQuantumTask(QuantumTask):
                 for measurement in results_pb.measurements:
                     measurements.append([_ for _ in measurement.bits])
                 self._result = GateModelQuantumTaskResult.from_measurements(task_data, measurements)
+        else:
+            raise Exception(f"Result format {self._result_format} is unknown.")
 
         return self._result
 
