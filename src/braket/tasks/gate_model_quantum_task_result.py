@@ -248,7 +248,8 @@ class GateModelQuantumTaskResult:
     @classmethod
     @xray_recorder.capture("gate_model_task_result._from_measurements")
     def from_measurements(cls, task, measurements):
-        measurements = np.asarray(measurements, dtype=int)
+        if not isinstance(measurements, np.ndarray):
+            measurements = np.asarray(measurements, dtype="B")
         m_counts = GateModelQuantumTaskResult.measurement_counts_from_measurements(measurements)
         measurement_probabilities = (
             GateModelQuantumTaskResult.measurement_probabilities_from_measurement_counts(m_counts)

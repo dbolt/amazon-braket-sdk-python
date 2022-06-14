@@ -17,14 +17,15 @@ import asyncio
 import json
 import time
 from functools import singledispatch
-from io import BytesIO
 from logging import Logger, getLogger
 from typing import Any, Dict, Union
 
 import amazon.ion.simpleion as ion
 import boto3
+import numpy as np
 from aws_xray_sdk.core import xray_recorder
 
+import braket.tasks.proto.results_pb2 as results_pb2
 from braket.annealing.problem import Problem
 from braket.aws.aws_session import AwsSession
 from braket.circuits.circuit import Circuit
@@ -49,7 +50,6 @@ from braket.ir.openqasm import Program as OpenQasmProgram
 from braket.schema_common import BraketSchemaBase
 from braket.task_result import AnnealingTaskResult, GateModelTaskResult
 from braket.tasks import AnnealingQuantumTaskResult, GateModelQuantumTaskResult, QuantumTask
-import braket.tasks.proto.results_pb2 as results_pb2
 
 
 class AwsQuantumTask(QuantumTask):
@@ -420,7 +420,12 @@ class AwsQuantumTask(QuantumTask):
                 self._result = GateModelQuantumTaskResult.from_measurements(task_data, measurements)
         elif self._result_format == "ION_BINARY":
             with xray_recorder.capture("ion_binary_loads"):
-                measurements = ion.loads(result_data)
+                ion_dict = ion.loads(result_data)
+                measurements = np.ndarray(
+                    shape=(ion_dict["row_size"], ion_dict["col_size"]),
+                    buffer=ion_dict["data"],
+                    dtype="B",
+                )
                 self._result = GateModelQuantumTaskResult.from_measurements(task_data, measurements)
         elif self._result_format == "PROTOBUF":
             with xray_recorder.capture("protobuf_loads"):
