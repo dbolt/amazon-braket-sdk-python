@@ -250,10 +250,6 @@ class GateModelQuantumTaskResult:
     def from_measurements(cls, task, measurements):
         if not isinstance(measurements, np.ndarray):
             measurements = np.asarray(measurements, dtype="B")
-        m_counts = GateModelQuantumTaskResult.measurement_counts_from_measurements(measurements)
-        measurement_probabilities = (
-            GateModelQuantumTaskResult.measurement_probabilities_from_measurement_counts(m_counts)
-        )
 
         return cls(
             task_metadata=TaskMetadata(
@@ -264,8 +260,6 @@ class GateModelQuantumTaskResult:
             values=[],
             measurements=np.asarray(measurements, dtype=int),
             measured_qubits=[],
-            measurement_counts=m_counts,
-            measurement_probabilities=measurement_probabilities,
             measurements_copied_from_device=True,
             measurement_counts_copied_from_device=False,
             measurement_probabilities_copied_from_device=False,
