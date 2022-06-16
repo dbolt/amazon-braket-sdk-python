@@ -399,8 +399,7 @@ class AwsQuantumTask(QuantumTask):
 
     @xray_recorder.capture("aws_quantum_task._download_result")
     def _download_result(self):
-
-        task_data = self.metadata(False)
+        task_data = self.metadata(True)
         if self._get_result:
             result_data = task_data["result"]
         else:
