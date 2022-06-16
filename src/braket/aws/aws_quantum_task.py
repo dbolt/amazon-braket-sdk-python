@@ -202,6 +202,7 @@ class AwsQuantumTask(QuantumTask):
         self._get_type = kwargs.get("get_type")
         self._batch_size = kwargs.get("batch_size", 1)
         self._result_format = kwargs.get("result_format", "JSON")
+        self._get_result = kwargs.get("get_result", False)
         self._metadata: Dict[str, Any] = {}
         self._result: Union[GateModelQuantumTaskResult, AnnealingQuantumTaskResult] = None
 
@@ -251,7 +252,9 @@ class AwsQuantumTask(QuantumTask):
             it wil still be called to populate the metadata for the first time.
         """
         if not use_cached_value or not self._metadata:
-            self._metadata = self._aws_session.get_quantum_task(self._arn, get_type=self._get_type)
+            self._metadata = self._aws_session.get_quantum_task(
+                self._arn, get_type=self._get_type, get_result=self._get_result
+            )
         return self._metadata
 
     def state(self, use_cached_value: bool = False) -> str:
@@ -397,8 +400,11 @@ class AwsQuantumTask(QuantumTask):
     @xray_recorder.capture("aws_quantum_task._download_result")
     def _download_result(self):
 
-        result_data = self._aws_session.get_quantum_task_result(self._arn)
-        task_data = self.metadata(True)
+        task_data = self.metadata(False)
+        if self._get_result:
+            result_data = task_data["result"]
+        else:
+            result_data = self._aws_session.get_quantum_task_result(self._arn)
 
         def _load_json_default(result_string):
             with xray_recorder.capture("_load_json_default.parse_raw_schema"):
