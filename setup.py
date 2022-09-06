@@ -36,7 +36,9 @@ setup(
         "networkx",
         "numpy",
         "sympy",
-        "aws-xray-sdk"
+        "aws-xray-sdk",
+        "websockets",
+        "amazon.ion",
     ],
     extras_require={
         "test": [

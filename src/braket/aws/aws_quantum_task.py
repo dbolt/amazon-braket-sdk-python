@@ -25,7 +25,6 @@ import boto3
 import numpy as np
 from aws_xray_sdk.core import xray_recorder
 
-import braket.tasks.proto.results_pb2 as results_pb2
 from braket.annealing.problem import Problem
 from braket.aws.aws_session import AwsSession
 from braket.circuits.circuit import Circuit
@@ -64,6 +63,42 @@ class AwsQuantumTask(QuantumTask):
     DEFAULT_RESULTS_POLL_TIMEOUT = 432000
     DEFAULT_RESULTS_POLL_INTERVAL = 1
     RESULTS_FILENAME = "results.json"
+
+    @staticmethod
+    @xray_recorder.capture("aws_quantum_task.create_with_websockets")
+    def create_with_websockets(
+        create_task_queue,
+        device_arn,
+        circuit,
+        shots,
+        result_format="JSON_MINIMAL",
+        device_parameters: Dict[str, Any] = None,
+        disable_qubit_rewiring: bool = False,
+        tags: Dict[str, str] = None,
+        *args,
+        **kwargs,
+    ):
+        create_task_kwargs = {
+            "deviceArn": device_arn,
+            "shots": shots,
+            "resultFormat": result_format,
+        }
+        if tags is not None:
+            create_task_kwargs.update({"tags": tags})
+
+        validate_circuit_and_shots(circuit, create_task_kwargs["shots"])
+        paradigm_parameters = GateModelParameters(
+            qubitCount=circuit.qubit_count, disableQubitRewiring=disable_qubit_rewiring
+        )
+
+        # hardcode this for the prototype
+        device_parameters = RigettiDeviceParameters(paradigmParameters=paradigm_parameters)
+
+        create_task_kwargs.update(
+            {"action": circuit.to_ir().json(), "deviceParameters": device_parameters.json()}
+        )
+
+        create_task_queue.put_nowait(create_task_kwargs)
 
     @staticmethod
     def create(
@@ -431,14 +466,6 @@ class AwsQuantumTask(QuantumTask):
                     buffer=ion_dict["data"],
                     dtype="B",
                 )
-                self._result = GateModelQuantumTaskResult.from_measurements(task_data, measurements)
-        elif self._result_format == "PROTOBUF":
-            with xray_recorder.capture("protobuf_loads"):
-                results_pb = results_pb2.Results()
-                results_pb.ParseFromString(result_data)
-                measurements = []
-                for measurement in results_pb.measurements:
-                    measurements.append([_ for _ in measurement.bits])
                 self._result = GateModelQuantumTaskResult.from_measurements(task_data, measurements)
         else:
             raise Exception(f"Result format {self._result_format} is unknown.")

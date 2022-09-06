@@ -13,24 +13,32 @@
 
 from __future__ import annotations
 
+import asyncio
+import base64
+import json
 import os
 from datetime import datetime
 from enum import Enum
 from typing import List, Optional, Union
 
+import amazon.ion.simpleion as ion
+import numpy as np
+from aws_xray_sdk.core import xray_recorder
 from botocore.errorfactory import ClientError
 from networkx import DiGraph, complete_graph, from_edgelist
 
 from braket.annealing.problem import Problem
-from braket.aws.aws_quantum_task import AwsQuantumTask
+from braket.aws.aws_quantum_task import AwsQuantumTask, _format_result
 from braket.aws.aws_quantum_task_batch import AwsQuantumTaskBatch
 from braket.aws.aws_session import AwsSession
+from braket.aws.websocket_connection import WebSocketConnection
 from braket.circuits import Circuit
 from braket.device_schema import DeviceCapabilities, ExecutionDay, GateModelQpuParadigmProperties
 from braket.device_schema.dwave import DwaveProviderProperties
 from braket.devices.device import Device
 from braket.ir.openqasm import Program as OpenQasmProgram
 from braket.schema_common import BraketSchemaBase
+from braket.tasks import GateModelQuantumTaskResult
 
 
 class AwsDeviceType(str, Enum):
@@ -52,10 +60,18 @@ class AwsDevice(Device):
     DEFAULT_SHOTS_QPU = 1000
     DEFAULT_SHOTS_SIMULATOR = 0
     DEFAULT_MAX_PARALLEL = 10
+    WEBSOCKET_CONNECTIONS_COUNT = 10
 
     _GET_DEVICES_ORDER_BY_KEYS = frozenset({"arn", "name", "type", "provider_name", "status"})
 
-    def __init__(self, arn: str, aws_session: Optional[AwsSession] = None):
+    def __init__(
+        self,
+        arn: str,
+        aws_session: Optional[AwsSession] = None,
+        use_websocket: bool = False,
+        websocket_route_type: str = None,
+        websocket_endpoint_url: str = None,
+    ):
         """
         Args:
             arn (str): The ARN of the device
@@ -77,7 +93,84 @@ class AwsDevice(Device):
         self._provider_name = None
         self._topology_graph = None
         self._type = None
-        self._aws_session = self._get_session_and_initialize(aws_session or AwsSession())
+
+        if not use_websocket:
+            self._aws_session = self._get_session_and_initialize(aws_session or AwsSession())
+        else:
+            self._create_task_queues = []
+            self._last_queue_index = 0
+            self._task_result_queue = asyncio.Queue()
+            for i in range(AwsDevice.WEBSOCKET_CONNECTIONS_COUNT):
+                create_task_queue = asyncio.Queue()
+                self._create_task_queues.append(create_task_queue)
+                WebSocketConnection(
+                    name_suffix=str(i),
+                    route_type=websocket_route_type,
+                    endpoint_url=websocket_endpoint_url,
+                    create_task_queue=create_task_queue,
+                    task_result_queue=self._task_result_queue,
+                )
+
+    def run_and_get_results(
+        self,
+        circuits: List[Circuit],
+        result_format: str = "JSON_MINIMAL",
+        shots: Optional[int] = None,
+        *aws_quantum_task_args,
+        **aws_quantum_task_kwargs,
+    ) -> List[GateModelQuantumTaskResult]:
+        for circuit in circuits:
+            AwsQuantumTask.create_with_websockets(
+                self._get_next_queue(),
+                self._arn,
+                circuit,
+                shots if shots is not None else self._default_shots,
+                result_format=result_format,
+                *aws_quantum_task_args,
+                **aws_quantum_task_kwargs,
+            )
+        return self._get_results(len(circuits), result_format)
+
+    @xray_recorder.capture("aws_device._get_results")
+    def _get_results(self, expected_size, result_format):
+        def _load_json_default(result_string):
+            with xray_recorder.capture("_load_json_default.parse_raw_schema"):
+                parsed_result = BraketSchemaBase.parse_raw_schema(result_string)
+            with xray_recorder.capture("_load_json_default._format_result"):
+                return _format_result(parsed_result)
+
+        task_data = {"quantumTaskArn": "fooArn", "deviceArn": "fooArn", "shots": 123}
+        results = []
+        for i in range(expected_size):
+            result_data = asyncio.get_event_loop().run_until_complete(self._task_result_queue.get())
+
+            if result_format == "JSON_DEFAULT":
+                result = _load_json_default(result_data)
+            elif result_format == "JSON_MINIMAL":
+                with xray_recorder.capture("json_loads"):
+                    measurements = json.loads(result_data)
+                    result = GateModelQuantumTaskResult.from_measurements(task_data, measurements)
+            elif result_format == "ION_BINARY":
+                result_data = base64.b64decode(result_data)
+                with xray_recorder.capture("ion_binary_loads"):
+                    ion_dict = ion.loads(result_data)
+                    measurements = np.ndarray(
+                        shape=(ion_dict["row_size"], ion_dict["col_size"]),
+                        buffer=ion_dict["data"],
+                        dtype="B",
+                    )
+                    result = GateModelQuantumTaskResult.from_measurements(task_data, measurements)
+            else:
+                raise Exception(f"Result format {result_format} is unknown.")
+
+            results.append(result)
+
+        return results
+
+    def _get_next_queue(self):
+        next_queue_index = (self._last_queue_index + 1) % len(self._create_task_queues)
+        self._last_queue_index = next_queue_index
+        return self._create_task_queues[next_queue_index]
 
     def run(
         self,

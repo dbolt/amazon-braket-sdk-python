@@ -167,7 +167,7 @@ class AwsSession(object):
         job_token = os.getenv("AMZN_BRAKET_JOB_TOKEN")
         if job_token:
             boto3_kwargs.update({"jobToken": job_token})
-        response = self.braket_client.create_quantum_task_v2(**boto3_kwargs)
+        response = self.braket_client.create_quantum_task(**boto3_kwargs)
         return response["quantumTaskArn"]
 
     def create_job(self, **boto3_kwargs) -> str:
