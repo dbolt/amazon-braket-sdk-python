@@ -148,12 +148,16 @@ class AwsDevice(Device):
                 result = _load_json_default(result_data)
             elif result_format == "JSON_MINIMAL":
                 with xray_recorder.capture("json_loads"):
-                    measurements = json.loads(result_data)
-                    result = GateModelQuantumTaskResult.from_measurements(task_data, measurements)
+                    results_dict = json.loads(result_data)
+                    task_data["quantumTaskArn"] = results_dict["task_id"]
+                    result = GateModelQuantumTaskResult.from_measurements(
+                        task_data, results_dict["measurements"]
+                    )
             elif result_format == "ION_BINARY":
                 result_data = base64.b64decode(result_data)
                 with xray_recorder.capture("ion_binary_loads"):
                     ion_dict = ion.loads(result_data)
+                    task_data["quantumTaskArn"] = ion_dict["task_id"]
                     measurements = np.ndarray(
                         shape=(ion_dict["row_size"], ion_dict["col_size"]),
                         buffer=ion_dict["data"],
