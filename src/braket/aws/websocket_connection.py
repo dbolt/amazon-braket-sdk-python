@@ -72,8 +72,8 @@ class WebSocketConnection:
                     # print(self._name, "Sending message", create_task_payload)
                     await self._connection.send(json.dumps(create_task_payload))
                     break
-                except ConnectionClosed:
-                    print(self._name, " _task_result Connection closed,", "opening a new one...")
+                except ConnectionClosed as e:
+                    print(self._name, " _task_result Connection closed:", e, "opening a new one...")
                     await self._create_connection()
 
     @log_exception
@@ -82,8 +82,8 @@ class WebSocketConnection:
             # print(self._name, "_receive_event Waiting for event...")
             try:
                 event = await self._connection.recv()
-            except ConnectionClosed:
-                print(self._name, " _task_result Connection closed,", "opening a new one...")
+            except ConnectionClosed as e:
+                print(self._name, " _task_result Connection closed:", e, "opening a new one...")
                 await self._create_connection()
 
             await self._task_result_queue.put(event)

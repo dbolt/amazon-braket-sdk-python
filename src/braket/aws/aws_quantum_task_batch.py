@@ -46,6 +46,7 @@ class AwsQuantumTaskBatch:
         s3_destination_folder: AwsSession.S3DestinationFolder,
         shots: int,
         max_parallel: int,
+        wait_for_tasks: bool = True,
         max_workers: int = MAX_CONNECTIONS_DEFAULT,
         poll_timeout_seconds: float = AwsQuantumTask.DEFAULT_RESULTS_POLL_TIMEOUT,
         poll_interval_seconds: float = AwsQuantumTask.DEFAULT_RESULTS_POLL_INTERVAL,
@@ -86,6 +87,7 @@ class AwsQuantumTaskBatch:
             s3_destination_folder,
             shots,
             max_parallel,
+            wait_for_tasks,
             max_workers,
             poll_timeout_seconds,
             poll_interval_seconds,
@@ -116,6 +118,7 @@ class AwsQuantumTaskBatch:
         s3_destination_folder,
         shots,
         max_parallel,
+        wait_for_tasks,
         max_workers,
         poll_timeout_seconds,
         poll_interval_seconds,
@@ -140,6 +143,7 @@ class AwsQuantumTaskBatch:
                     task,
                     s3_destination_folder,
                     shots,
+                    wait_for_tasks,
                     poll_timeout_seconds=poll_timeout_seconds,
                     poll_interval_seconds=poll_interval_seconds,
                     *args,
@@ -158,6 +162,7 @@ class AwsQuantumTaskBatch:
         task_specification,
         s3_destination_folder,
         shots,
+        wait_for_tasks,
         poll_interval_seconds,
         *args,
         **kwargs,
@@ -177,7 +182,7 @@ class AwsQuantumTaskBatch:
 
         # If the task hits a terminal state before all tasks have been created,
         # it can be returned immediately
-        while remaining:
+        while wait_for_tasks and remaining:
             if task.state() in AwsQuantumTask.TERMINAL_STATES:
                 break
             time.sleep(poll_interval_seconds)

@@ -175,6 +175,8 @@ class AwsQuantumTask(QuantumTask):
         )
         create_task_kwargs["batchSize"] = kwargs.get("batch_size", 1)
         create_task_kwargs["resultFormat"] = kwargs.get("result_format", 1)
+        if "job_token" in kwargs:
+            create_task_kwargs["jobToken"] = kwargs.get("job_token")
         if tags is not None:
             create_task_kwargs.update({"tags": tags})
         if isinstance(task_specification, Circuit) and task_specification.parameters:

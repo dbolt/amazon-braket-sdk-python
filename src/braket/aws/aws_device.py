@@ -60,7 +60,7 @@ class AwsDevice(Device):
     DEFAULT_SHOTS_QPU = 1000
     DEFAULT_SHOTS_SIMULATOR = 0
     DEFAULT_MAX_PARALLEL = 10
-    WEBSOCKET_CONNECTIONS_COUNT = 10
+    WEBSOCKET_CONNECTIONS_COUNT = 1
 
     _GET_DEVICES_ORDER_BY_KEYS = frozenset({"arn", "name", "type", "provider_name", "status"})
 
@@ -69,8 +69,11 @@ class AwsDevice(Device):
         arn: str,
         aws_session: Optional[AwsSession] = None,
         use_websocket: bool = False,
+        create_with_websockets: bool = False,
         websocket_route_type: str = None,
         websocket_endpoint_url: str = None,
+        job_token: str = "",
+        session_id: str = None,
     ):
         """
         Args:
@@ -89,14 +92,16 @@ class AwsDevice(Device):
         """
         super().__init__(name=None, status=None)
         self._arn = arn
+        self._create_with_websockets = create_with_websockets
+        self._use_websocket = use_websocket
+        self._job_token = job_token
         self._properties = None
         self._provider_name = None
         self._topology_graph = None
         self._type = None
 
-        if not use_websocket:
-            self._aws_session = self._get_session_and_initialize(aws_session or AwsSession())
-        else:
+        self._aws_session = self._get_session_and_initialize(aws_session or AwsSession())
+        if self._use_websocket:
             self._create_task_queues = []
             self._last_queue_index = 0
             self._task_result_queue = asyncio.Queue()
@@ -106,7 +111,7 @@ class AwsDevice(Device):
                 WebSocketConnection(
                     name_suffix=str(i),
                     route_type=websocket_route_type,
-                    endpoint_url=websocket_endpoint_url,
+                    endpoint_url=f"{websocket_endpoint_url}/?sessionId={session_id}",
                     create_task_queue=create_task_queue,
                     task_result_queue=self._task_result_queue,
                 )
@@ -119,13 +124,31 @@ class AwsDevice(Device):
         *aws_quantum_task_args,
         **aws_quantum_task_kwargs,
     ) -> List[GateModelQuantumTaskResult]:
-        for circuit in circuits:
-            AwsQuantumTask.create_with_websockets(
-                self._get_next_queue(),
+        if self._create_with_websockets:
+            for circuit in circuits:
+                AwsQuantumTask.create_with_websockets(
+                    self._get_next_queue(),
+                    self._arn,
+                    circuit,
+                    shots if shots is not None else self._default_shots,
+                    result_format=result_format,
+                    *aws_quantum_task_args,
+                    **aws_quantum_task_kwargs,
+                )
+        else:
+            AwsQuantumTaskBatch(
+                self._aws_session,
                 self._arn,
-                circuit,
-                shots if shots is not None else self._default_shots,
+                circuits,
+                (self._aws_session.default_bucket(), "tasks"),
+                shots,
+                max_parallel=self._default_max_parallel,
+                max_workers=AwsQuantumTaskBatch.MAX_CONNECTIONS_DEFAULT,
+                poll_timeout_seconds=AwsQuantumTask.DEFAULT_RESULTS_POLL_TIMEOUT,
+                poll_interval_seconds=AwsQuantumTask.DEFAULT_RESULTS_POLL_INTERVAL,
                 result_format=result_format,
+                wait_for_tasks=not self._use_websocket,
+                job_token=self._job_token,
                 *aws_quantum_task_args,
                 **aws_quantum_task_kwargs,
             )
