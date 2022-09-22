@@ -201,7 +201,7 @@ class AwsSession(object):
         jitter=backoff.full_jitter,
         giveup=_should_giveup.__func__,
     )
-    def get_quantum_task(self, arn: str, get_result: bool = False, **kwargs) -> Dict[str, Any]:
+    def get_quantum_task(self, arn: str, **kwargs) -> Dict[str, Any]:
         """
         Gets the quantum task.
 
@@ -213,9 +213,9 @@ class AwsSession(object):
         """
         get_type = kwargs.get("get_type", GetType.DEFAULT)
         if get_type == GetType.DEFAULT:
-            return self.braket_client.get_quantum_task_v2(quantumTaskArn=arn)
+            return self.braket_client.get_quantum_task(quantumTaskArn=arn)
         else:
-            return self.braket_client.get_quantum_task_v3(quantumTaskArn=arn, getResult=get_result)
+            return self.braket_client.get_quantum_task_v3(quantumTaskArn=arn)
 
     @xray_recorder.capture("get_quantum_task_result")
     def get_quantum_task_result(self, arn: str) -> str:

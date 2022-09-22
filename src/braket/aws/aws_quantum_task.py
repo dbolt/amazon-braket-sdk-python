@@ -173,8 +173,8 @@ class AwsQuantumTask(QuantumTask):
             s3_destination_folder,
             shots if shots is not None else AwsQuantumTask.DEFAULT_SHOTS,
         )
-        create_task_kwargs["batchSize"] = kwargs.get("batch_size", 1)
         create_task_kwargs["resultFormat"] = kwargs.get("result_format", 1)
+        create_task_kwargs["resultDestination"] = kwargs.get("result_destination", "FILESYSTEM")
         if "job_token" in kwargs:
             create_task_kwargs["jobToken"] = kwargs.get("job_token")
         if tags is not None:
@@ -199,6 +199,7 @@ class AwsQuantumTask(QuantumTask):
         self,
         arn: str,
         aws_session: AwsSession = None,
+        aws_session_poller: AwsSession = None,
         poll_timeout_seconds: float = DEFAULT_RESULTS_POLL_TIMEOUT,
         poll_interval_seconds: float = DEFAULT_RESULTS_POLL_INTERVAL,
         logger: Logger = getLogger(__name__),
@@ -232,14 +233,14 @@ class AwsQuantumTask(QuantumTask):
         self._aws_session: AwsSession = aws_session or AwsQuantumTask._aws_session_for_task_arn(
             task_arn=arn
         )
+        self._aws_session_poller: AwsSession = aws_session_poller
         self._poll_timeout_seconds = poll_timeout_seconds
         self._poll_interval_seconds = poll_interval_seconds
 
         self._logger = logger
         self._get_type = kwargs.get("get_type")
-        self._batch_size = kwargs.get("batch_size", 1)
         self._result_format = kwargs.get("result_format", "JSON")
-        self._get_result = kwargs.get("get_result", False)
+        self._result_destination = kwargs.get("result_destination", "FILESYSTEM")
         self._metadata: Dict[str, Any] = {}
         self._result: Union[GateModelQuantumTaskResult, AnnealingQuantumTaskResult] = None
 
@@ -289,8 +290,8 @@ class AwsQuantumTask(QuantumTask):
             it wil still be called to populate the metadata for the first time.
         """
         if not use_cached_value or not self._metadata:
-            self._metadata = self._aws_session.get_quantum_task(
-                self._arn, get_type=self._get_type, get_result=self._get_result
+            self._metadata = self._aws_session_poller.get_quantum_task(
+                self._arn, get_type=self._get_type
             )
         return self._metadata
 
@@ -437,10 +438,7 @@ class AwsQuantumTask(QuantumTask):
     @xray_recorder.capture("aws_quantum_task._download_result")
     def _download_result(self):
         task_data = self.metadata(True)
-        if self._get_result:
-            result_data = task_data["result"]
-        else:
-            result_data = self._aws_session.get_quantum_task_result(self._arn)
+        result_data = self._aws_session.get_quantum_task_result(self._arn)
 
         def _load_json_default(result_string):
             with xray_recorder.capture("_load_json_default.parse_raw_schema"):
@@ -448,13 +446,7 @@ class AwsQuantumTask(QuantumTask):
             with xray_recorder.capture("_load_json_default._format_result"):
                 return _format_result(parsed_result)
 
-        if self._batch_size > 1:
-            result_json = json.loads(result_data)
-            results = [
-                _load_json_default(sub_result_str) for sub_result_str in result_json["results"]
-            ]
-            self._result = results
-        elif self._result_format == "JSON_DEFAULT":
+        if self._result_format == "JSON_DEFAULT":
             self._result = _load_json_default(result_data)
         elif self._result_format == "JSON_MINIMAL":
             with xray_recorder.capture("json_loads"):

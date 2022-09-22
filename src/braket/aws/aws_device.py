@@ -68,7 +68,8 @@ class AwsDevice(Device):
         self,
         arn: str,
         aws_session: Optional[AwsSession] = None,
-        use_websocket: bool = False,
+        aws_session_poller: Optional[AwsSession] = None,
+        result_destination: str = "FILESYSTEM",
         create_with_websockets: bool = False,
         websocket_route_type: str = None,
         websocket_endpoint_url: str = None,
@@ -93,7 +94,7 @@ class AwsDevice(Device):
         super().__init__(name=None, status=None)
         self._arn = arn
         self._create_with_websockets = create_with_websockets
-        self._use_websocket = use_websocket
+        self._result_destination = result_destination
         self._job_token = job_token
         self._properties = None
         self._provider_name = None
@@ -101,7 +102,8 @@ class AwsDevice(Device):
         self._type = None
 
         self._aws_session = self._get_session_and_initialize(aws_session or AwsSession())
-        if self._use_websocket:
+        self._aws_session_poller = aws_session_poller
+        if self._result_destination == "WEBSOCKET":
             self._create_task_queues = []
             self._last_queue_index = 0
             self._task_result_queue = asyncio.Queue()
@@ -147,7 +149,8 @@ class AwsDevice(Device):
                 poll_timeout_seconds=AwsQuantumTask.DEFAULT_RESULTS_POLL_TIMEOUT,
                 poll_interval_seconds=AwsQuantumTask.DEFAULT_RESULTS_POLL_INTERVAL,
                 result_format=result_format,
-                wait_for_tasks=not self._use_websocket,
+                wait_for_tasks=self._result_destination != "WEBSOCKET",
+                result_destination=self._result_destination,
                 job_token=self._job_token,
                 *aws_quantum_task_args,
                 **aws_quantum_task_kwargs,
