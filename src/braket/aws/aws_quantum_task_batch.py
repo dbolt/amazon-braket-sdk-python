@@ -46,7 +46,7 @@ class AwsQuantumTaskBatch:
         s3_destination_folder: AwsSession.S3DestinationFolder,
         shots: int,
         max_parallel: int,
-        aws_session_poller: AwsSession,
+        aws_session_nlb: AwsSession,
         wait_for_tasks: bool = True,
         max_workers: int = MAX_CONNECTIONS_DEFAULT,
         poll_timeout_seconds: float = AwsQuantumTask.DEFAULT_RESULTS_POLL_TIMEOUT,

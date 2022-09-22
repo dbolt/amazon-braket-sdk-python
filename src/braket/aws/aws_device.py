@@ -68,9 +68,9 @@ class AwsDevice(Device):
         self,
         arn: str,
         aws_session: Optional[AwsSession] = None,
-        aws_session_poller: Optional[AwsSession] = None,
+        aws_session_nlb: Optional[AwsSession] = None,
+        create_destination: str = "API_GATEWAY",
         result_destination: str = "FILESYSTEM",
-        create_with_websockets: bool = False,
         websocket_route_type: str = None,
         websocket_endpoint_url: str = None,
         job_token: str = "",
@@ -93,7 +93,7 @@ class AwsDevice(Device):
         """
         super().__init__(name=None, status=None)
         self._arn = arn
-        self._create_with_websockets = create_with_websockets
+        self._create_destination = create_destination
         self._result_destination = result_destination
         self._job_token = job_token
         self._properties = None
@@ -102,7 +102,7 @@ class AwsDevice(Device):
         self._type = None
 
         self._aws_session = self._get_session_and_initialize(aws_session or AwsSession())
-        self._aws_session_poller = aws_session_poller
+        self._aws_session_nlb = aws_session_nlb
         if self._result_destination == "WEBSOCKET":
             self._create_task_queues = []
             self._last_queue_index = 0
@@ -126,7 +126,7 @@ class AwsDevice(Device):
         *aws_quantum_task_args,
         **aws_quantum_task_kwargs,
     ) -> List[GateModelQuantumTaskResult]:
-        if self._create_with_websockets:
+        if self._create_task_queues == "WEBSOCKET":
             for circuit in circuits:
                 AwsQuantumTask.create_with_websockets(
                     self._get_next_queue(),
