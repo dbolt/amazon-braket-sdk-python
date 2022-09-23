@@ -440,7 +440,7 @@ class AwsQuantumTask(QuantumTask):
         task_data = self.metadata(True)
 
         if self._result_destination == "S3":
-            result_data = self._aws_session.retrieve_s3_object_body(
+            result_data = self._aws_session_nlb.retrieve_s3_object_body(
                 task_data["outputS3Bucket"],
                 task_data["outputS3Directory"] + f"/{AwsQuantumTask.RESULTS_FILENAME}",
             )
