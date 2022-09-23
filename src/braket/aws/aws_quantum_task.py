@@ -199,7 +199,6 @@ class AwsQuantumTask(QuantumTask):
         self,
         arn: str,
         aws_session: AwsSession = None,
-        aws_session_nlb: AwsSession = None,
         poll_timeout_seconds: float = DEFAULT_RESULTS_POLL_TIMEOUT,
         poll_interval_seconds: float = DEFAULT_RESULTS_POLL_INTERVAL,
         logger: Logger = getLogger(__name__),
@@ -233,7 +232,6 @@ class AwsQuantumTask(QuantumTask):
         self._aws_session: AwsSession = aws_session or AwsQuantumTask._aws_session_for_task_arn(
             task_arn=arn
         )
-        self._aws_session_nlb: AwsSession = aws_session_nlb
         self._poll_timeout_seconds = poll_timeout_seconds
         self._poll_interval_seconds = poll_interval_seconds
 
@@ -290,7 +288,7 @@ class AwsQuantumTask(QuantumTask):
             it wil still be called to populate the metadata for the first time.
         """
         if not use_cached_value or not self._metadata:
-            self._metadata = self._aws_session_nlb.get_quantum_task(
+            self._metadata = self._aws_session.get_quantum_task(
                 self._arn, get_type=self._get_type
             )
         return self._metadata
@@ -440,12 +438,12 @@ class AwsQuantumTask(QuantumTask):
         task_data = self.metadata(True)
 
         if self._result_destination == "S3":
-            result_data = self._aws_session_nlb.retrieve_s3_object_body(
+            result_data = self._aws_session.retrieve_s3_object_body(
                 task_data["outputS3Bucket"],
                 task_data["outputS3Directory"] + f"/{AwsQuantumTask.RESULTS_FILENAME}",
             )
         else:
-            result_data = self._aws_session_nlb.get_quantum_task_result(self._arn)
+            result_data = self._aws_session.get_quantum_task_result(self._arn)
 
         def _load_json_default(result_string):
             with xray_recorder.capture("_load_json_default.parse_raw_schema"):

@@ -75,7 +75,7 @@ class AwsSession(object):
         self._default_bucket = default_bucket or os.environ.get("AMZN_BRAKET_OUT_S3_BUCKET")
 
         self._iam = None
-        self._s3 = None
+        self._s3 = self.boto_session.resource("s3")
         self._sts = None
         self._logs = None
         self._ecr = None
@@ -287,8 +287,7 @@ class AwsSession(object):
         Returns:
             str: The body of the S3 object.
         """
-        s3 = self.boto_session.resource("s3", config=self._config)
-        obj = s3.Object(s3_bucket, s3_object_key)
+        obj = self._s3.Object(s3_bucket, s3_object_key)
         return obj.get()["Body"].read().decode("utf-8")
 
     def upload_to_s3(self, filename: str, s3_uri: str) -> None:
