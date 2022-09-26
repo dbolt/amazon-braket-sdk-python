@@ -73,7 +73,6 @@ class AwsDevice(Device):
         result_destination: str = "FILESYSTEM",
         websocket_route_type: str = None,
         websocket_endpoint_url: str = None,
-        job_token: str = "",
         session_id: str = None,
     ):
         """
@@ -95,7 +94,6 @@ class AwsDevice(Device):
         self._arn = arn
         self._create_destination = create_destination
         self._result_destination = result_destination
-        self._job_token = job_token
         self._properties = None
         self._provider_name = None
         self._topology_graph = None
@@ -151,7 +149,6 @@ class AwsDevice(Device):
                 result_format=result_format,
                 wait_for_tasks=self._result_destination != "WEBSOCKET",
                 result_destination=self._result_destination,
-                job_token=self._job_token,
                 *aws_quantum_task_args,
                 **aws_quantum_task_kwargs,
             )
